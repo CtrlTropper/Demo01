@@ -38,8 +38,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 	user = db.query(DS_Nguoi_dung).filter(DS_Nguoi_dung.Username == form_data.username).first()
 	if not user or not verify_password(form_data.password, user.passwork):
 		raise HTTPException(status_code=400, detail="Incorrect username or password")
-	access_token = create_access_token(data={"sub": user.Username, "is_admin": user.isAdmin})
-	return {"access_token": access_token, "token_type": "bearer"}
+	# Tạo session token thay vì JWT
+	from auth import create_session_token
+	token = create_session_token(db, user.UID)
+	return {"access_token": token, "token_type": "bearer"}
+
+# Endpoint lấy thông tin người dùng hiện tại
+@app.get("/me")
+def me(current_user: DS_Nguoi_dung = Depends(get_current_user)):
+	return {"username": current_user.Username, "is_admin": current_user.isAdmin}
 
 # Endpoint Chat (Yêu cầu auth, cho cả User và Admin)
 @app.post("/chat")

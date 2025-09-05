@@ -11,6 +11,7 @@ const API_BASE = 'http://127.0.0.1:8000';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
+  const [user, setUser] = useState({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,13 +19,16 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const decodeJwtPayload = (tkn) => {
+  const fetchMe = async (tkn) => {
     try {
-      const base64 = tkn.split('.')[1];
-      const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
-      return JSON.parse(json);
-    } catch {
-      return null;
+      const res = await fetch(`${API_BASE}/me`, {
+        headers: { 'Authorization': `Bearer ${tkn}` }
+      });
+      if (!res.ok) throw new Error('Failed to get profile');
+      const data = await res.json();
+      setUser({ name: data.username, position: 'User', unit: '', isAdmin: !!data.is_admin });
+    } catch (e) {
+      setUser({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
     }
   };
 
@@ -33,6 +37,7 @@ function App() {
     if (savedToken) {
       setToken(savedToken);
       setIsLoggedIn(true);
+      fetchMe(savedToken);
     }
   }, []);
 
@@ -54,19 +59,6 @@ function App() {
     }
   }, [conversations]);
 
-  const payload = token ? decodeJwtPayload(token) : null;
-  const user = payload ? {
-    name: payload.sub || 'User',
-    position: 'User',
-    unit: '',
-    isAdmin: !!payload.is_admin,
-  } : {
-    name: 'Guest',
-    position: 'Guest',
-    unit: '',
-    isAdmin: false,
-  };
-
   const createNewConversation = () => {
     const newId = Date.now().toString();
     const newConv = { id: newId, title: 'New Chat', messages: [] };
@@ -75,7 +67,6 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
-    // Lưu message người dùng
     setConversations(prev => {
       const updated = prev.map(conv => {
         if (conv.id === currentConversationId) {
@@ -88,7 +79,6 @@ function App() {
       return updated;
     });
 
-    // Gọi API chat
     setIsLoading(true);
     fetch(`${API_BASE}/chat`, {
       method: 'POST',
@@ -158,10 +148,11 @@ function App() {
     setIsModalOpen(false);
     setToken('');
     localStorage.clear();
+    setUser({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
   };
 
   if (!isLoggedIn) {
-    return <Login onLogin={(jwt) => { localStorage.setItem('token', jwt); setToken(jwt); setIsLoggedIn(true); }} />;
+    return <Login onLogin={(sessionToken) => { localStorage.setItem('token', sessionToken); setToken(sessionToken); setIsLoggedIn(true); fetchMe(sessionToken); }} />;
   }
 
   return (
