@@ -1,10 +1,11 @@
-embedding_model: ../models/multilingual_e5_large  # Path từ src/
-llm_model: ../models/vinallama-2.7b-chat
-vector_store: ../results/all_faiss.index
-top_k: 3
-temperature: 0.7
-chunk_size: 512
-jwt_secret: "your_super_secret_key"  # Generate bằng Python: import secrets; print(secrets.token_hex(32))
-jwt_algorithm: "HS256"
-jwt_expire_minutes: 30
-db_url: "sqlite:///../users.db"  # Path từ src/
+database:
+  url: "sqlite:///../results/app.db"
+
+security:
+  jwt_secret: "CHANGE_ME_SECRET_KEY"
+
+rag:
+  embedding_model_path: "../models/multilingual_e5_large"
+  llm_model_path: "../models/vinallama-2.7b-chat"
+  faiss_index_path: "../results/all_faiss.index"
+  embeddings_pkl_path: "../results/all_embeddings.pkl"

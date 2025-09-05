@@ -6,8 +6,11 @@ import Sidebar from './components/Sidebar';
 import UserModal from './components/UserModal';
 import Login from './components/Login';
 
+const API_BASE = 'http://127.0.0.1:8000';
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [token, setToken] = useState('');
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,12 +18,23 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const user = {
-    name: 'John Doe',
-    position: 'Developer',
-    unit: 'IT Department',
-    isAdmin: true, // Set to true for demo; can be dynamic
+  const decodeJwtPayload = (tkn) => {
+    try {
+      const base64 = tkn.split('.')[1];
+      const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
   };
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      setToken(savedToken);
+      setIsLoggedIn(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -40,6 +54,19 @@ function App() {
     }
   }, [conversations]);
 
+  const payload = token ? decodeJwtPayload(token) : null;
+  const user = payload ? {
+    name: payload.sub || 'User',
+    position: 'User',
+    unit: '',
+    isAdmin: !!payload.is_admin,
+  } : {
+    name: 'Guest',
+    position: 'Guest',
+    unit: '',
+    isAdmin: false,
+  };
+
   const createNewConversation = () => {
     const newId = Date.now().toString();
     const newConv = { id: newId, title: 'New Chat', messages: [] };
@@ -48,6 +75,7 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
+    // Lưu message người dùng
     setConversations(prev => {
       const updated = prev.map(conv => {
         if (conv.id === currentConversationId) {
@@ -57,18 +85,44 @@ function App() {
         }
         return conv;
       });
-      setIsLoading(true);
-      setTimeout(() => {
+      return updated;
+    });
+
+    // Gọi API chat
+    setIsLoading(true);
+    fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ query: text }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || 'Request failed');
+        }
+        return res.json();
+      })
+      .then(data => {
+        const botText = data?.response || 'Không nhận được phản hồi.';
         setConversations(prevUpdated => prevUpdated.map(c => {
           if (c.id === currentConversationId) {
-            return { ...c, messages: [...c.messages, { sender: 'bot', text: 'Chatbot đang xử lý câu hỏi của bạn...' }] };
+            return { ...c, messages: [...c.messages, { sender: 'bot', text: botText }] };
           }
           return c;
         }));
-        setIsLoading(false);
-      }, 1000);
-      return updated;
-    });
+      })
+      .catch(err => {
+        setConversations(prevUpdated => prevUpdated.map(c => {
+          if (c.id === currentConversationId) {
+            return { ...c, messages: [...c.messages, { sender: 'bot', text: `Lỗi: ${err.message}` }] };
+          }
+          return c;
+        }));
+      })
+      .finally(() => setIsLoading(false));
   };
 
   const selectConversation = (id) => {
@@ -102,11 +156,12 @@ function App() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setIsModalOpen(false);
-    localStorage.clear(); // Optional: clear storage on logout
+    setToken('');
+    localStorage.clear();
   };
 
   if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+    return <Login onLogin={(jwt) => { localStorage.setItem('token', jwt); setToken(jwt); setIsLoggedIn(true); }} />;
   }
 
   return (

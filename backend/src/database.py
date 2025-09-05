@@ -1,60 +1,39 @@
-# auth.py: Authentication và authorization
-
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+import os
 import yaml
-from database import get_db
-from models import User
-from schemas import TokenData
 
-with open("../config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+# Đọc cấu hình DB từ YAML nếu có, fallback sang SQLite file
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
+DB_URL_DEFAULT = "sqlite:///../results/app.db"
 
-SECRET_KEY = config["jwt_secret"]
-ALGORITHM = config["jwt_algorithm"]
-ACCESS_TOKEN_EXPIRE_MINUTES = config["jwt_expire_minutes"]
+DATABASE_URL = None
+try:
+	if os.path.exists(CONFIG_PATH):
+		with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+			cfg = yaml.safe_load(f) or {}
+			DATABASE_URL = cfg.get("database", {}).get("url")
+except Exception:
+	# Giữ None để dùng default
+	pass
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+if not DATABASE_URL:
+	DATABASE_URL = DB_URL_DEFAULT
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+# SQLite needs check_same_thread=False if used with FastAPI sessions
+engine = create_engine(
+	DATABASE_URL,
+	connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+# Dependency sử dụng trong FastAPI
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        role: str = payload.get("role")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username, role=role)
-    except JWTError:
-        raise credentials_exception
-    user = db.query(User).filter(User.username == token_data.username).first()
-    if user is None:
-        raise credentials_exception
-    return user
-
-def get_current_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    return current_user
+def get_db():
+	db = SessionLocal()
+	try:
+		yield db
+	finally:
+		db.close()

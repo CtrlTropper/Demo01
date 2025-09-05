@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { User, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 
+const API_BASE = 'http://127.0.0.1:8000';
+
 const Login = ({ onLogin }) => {
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [errors, setErrors] = useState({ username: '', password: '', general: '' });
@@ -27,23 +29,37 @@ const Login = ({ onLogin }) => {
     setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
-  const simulateLogin = async () => {
+  const doLogin = async () => {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    if (formData.username === 'admin' && formData.password === 'password123') {
-      setAttempts(0);
-      onLogin();
-    } else {
+    setErrors(prev => ({ ...prev, general: '' }));
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          username: formData.username,
+          password: formData.password,
+        })
+      });
+      if (!res.ok) {
+        throw new Error('Invalid credentials');
+      }
+      const data = await res.json();
+      const token = data?.access_token;
+      if (!token) throw new Error('No token received');
+      if (rememberMe) localStorage.setItem('token', token);
+      onLogin(token);
+    } catch (e) {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
-      setErrors((prev) => ({ ...prev, general: 'Invalid credentials' }));
+      setErrors((prev) => ({ ...prev, general: e.message || 'Login failed' }));
       if (newAttempts >= 5) {
         setIsLocked(true);
         setErrors((prev) => ({ ...prev, general: 'Account locked. Contact support.' }));
       }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleSubmit = (e) => {
@@ -54,7 +70,7 @@ const Login = ({ onLogin }) => {
       validateField('password', formData.password);
       return;
     }
-    simulateLogin();
+    doLogin();
   };
 
   return (
@@ -128,8 +144,8 @@ const Login = ({ onLogin }) => {
         </form>
         <div className="mt-6 text-center">
           <p className="text-white mb-2">Demo credentials:</p>
-          <p className="text-gray-300">Username: admin</p>
-          <p className="text-gray-300">Password: password123</p>
+          <p className="text-gray-300">Username: Admin</p>
+          <p className="text-gray-300">Password: 123456789</p>
         </div>
         <p className="text-center text-gray-300 mt-4">Protected by SSL encryption 🔒</p>
       </div>
