@@ -1,8 +1,8 @@
 database:
   url: "sqlite:///../results/app.db"
 
-security:
-  jwt_secret: "CHANGE_ME_SECRET_KEY"
+# security:
+  # jwt_secret: "CHANGE_ME_SECRET_KEY"
 
 rag:
   embedding_model_path: "../models/multilingual_e5_large"

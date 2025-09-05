@@ -10,8 +10,8 @@ from database import get_db, engine, Base
 from models import DS_Nguoi_dung, DS_File
 from schemas import UserCreate, UserUpdate, UserOut, Token, FileCreate, FileOut
 from auth import (
-	verify_password, get_password_hash, create_access_token,
-	get_current_user, get_current_admin
+	verify_password, get_password_hash,
+	get_current_user, get_current_admin, create_session_token
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,7 +39,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 	if not user or not verify_password(form_data.password, user.passwork):
 		raise HTTPException(status_code=400, detail="Incorrect username or password")
 	# Tạo session token thay vì JWT
-	from auth import create_session_token
 	token = create_session_token(db, user.UID)
 	return {"access_token": token, "token_type": "bearer"}
 
