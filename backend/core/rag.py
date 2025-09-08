@@ -17,6 +17,9 @@ LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/v
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_faiss.index")
 EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_embeddings.pkl")
 
+# Cấu hình sinh
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
+
 # Biến toàn cục để khởi tạo lười
 embedding_model = None
 tokenizer = None
@@ -107,7 +110,7 @@ def generate_answer(prompt):
     outputs = model.generate(
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
-        max_new_tokens=256,
+        max_new_tokens=MAX_NEW_TOKENS,
         temperature=0.7,
         do_sample=True
     )
@@ -130,7 +133,7 @@ def generate_answer_stream(prompt):
     generate_kwargs = dict(
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
-        max_new_tokens=256,
+        max_new_tokens=MAX_NEW_TOKENS,
         temperature=0.7,
         do_sample=True,
         streamer=streamer,
