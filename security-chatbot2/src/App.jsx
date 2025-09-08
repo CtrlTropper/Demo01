@@ -82,6 +82,7 @@ function App() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let botAccum = '';
+      let sseBuffer = '';
 
       const appendBot = (chunkText) => {
         botAccum += chunkText;
@@ -101,19 +102,24 @@ function App() {
         }));
       };
 
-      // Đọc từng chunk SSE
+      // Đọc từng chunk SSE, buffer và tách theo sự kiện (\n\n)
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const textChunk = decoder.decode(value, { stream: true });
-        const lines = textChunk.split(/\r?\n/);
-        for (const line of lines) {
-          if (!line) continue;
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6);
-            if (payload === '[DONE]') continue;
-            appendBot(payload);
+        sseBuffer += decoder.decode(value, { stream: true });
+        let eventEndIndex;
+        while ((eventEndIndex = sseBuffer.indexOf('\n\n')) !== -1) {
+          const rawEvent = sseBuffer.slice(0, eventEndIndex);
+          sseBuffer = sseBuffer.slice(eventEndIndex + 2);
+          // Một sự kiện SSE có thể gồm nhiều dòng 'data:'
+          const dataLines = rawEvent.split(/\r?\n/).filter(l => l.startsWith('data:'));
+          const payload = dataLines.map(l => l.slice(5).trimStart()).join('\n');
+          if (!payload) continue;
+          if (payload === '[DONE]') {
+            // Bỏ qua, vòng while ngoài sẽ kết thúc khi reader.done = true
+            continue;
           }
+          appendBot(payload);
         }
       }
 

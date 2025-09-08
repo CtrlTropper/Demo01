@@ -36,6 +36,19 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 def get_current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User | None:
     if not authorization or not authorization.startswith("Bearer "):
         return None
+
+
+@router.get("/me")
+def me(user: User | None = Depends(get_current_user)):
+    if user is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "created_at": str(user.created_at),
+    }
     token = authorization.split(" ", 1)[1]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])

@@ -82,14 +82,20 @@ def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db), us
     def event_generator():
         # Stream từng chunk text ra client theo SSE
         for chunk in rag_answer_stream(request.query):
-            # Định dạng SSE: data: <chunk>\n\n
-            yield f"data: {chunk}\n\n"
+            if not chunk:
+                continue
+            # SSE chuẩn: mỗi dòng dữ liệu đều bắt đầu bằng 'data:'
+            # và một sự kiện kết thúc bằng dòng trống.
+            for line in str(chunk).splitlines():
+                yield f"data: {line}\n"
+            # Kết thúc một sự kiện
+            yield "\n"
         # Kết thúc stream
         yield "data: [DONE]\n\n"
 
     from fastapi.responses import StreamingResponse
     headers = {
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }
