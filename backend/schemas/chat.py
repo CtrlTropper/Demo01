@@ -8,3 +8,27 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     session_id: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+
+
+class ConversationItem(BaseModel):
+    id: int
+    title: str
+    created_at: str
+
+
+class MessageItem(BaseModel):
+    id: int
+    sender: str
+    text: str
+    created_at: str

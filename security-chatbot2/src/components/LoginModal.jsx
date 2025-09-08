@@ -27,14 +27,22 @@ const LoginModal = ({ onClose, onLogin }) => {
     setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
-  const simulateLogin = async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    if (formData.username === 'admin' && formData.password === 'password123') {
+  const doLogin = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: formData.username, password: formData.password })
+      });
+      if (!res.ok) throw new Error('Invalid credentials');
+      const data = await res.json();
+      // Lưu token & role
+      localStorage.setItem('auth:token', data.access_token);
+      localStorage.setItem('auth:role', data.role);
       setAttempts(0);
       onLogin();
-    } else {
+    } catch (e) {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
       setErrors((prev) => ({ ...prev, general: 'Invalid credentials' }));
@@ -42,8 +50,9 @@ const LoginModal = ({ onClose, onLogin }) => {
         setIsLocked(true);
         setErrors((prev) => ({ ...prev, general: 'Account locked. Contact support.' }));
       }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleSubmit = (e) => {
@@ -54,7 +63,7 @@ const LoginModal = ({ onClose, onLogin }) => {
       validateField('password', formData.password);
       return;
     }
-    simulateLogin();
+    doLogin();
   };
 
   return (

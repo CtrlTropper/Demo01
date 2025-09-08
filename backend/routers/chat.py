@@ -14,22 +14,24 @@ from ..core.embeding import (
 from ..core.rag import rag_answer, rag_answer_stream  # Từ core
 import uuid
 import os
+from .auth import get_current_user
 
 router = APIRouter()
 
 @router.post("/chat", response_model=ChatResponse)
-def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
+def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not request.query:
         raise HTTPException(status_code=400, detail="Query is required")
     
     # Generate response
     response = rag_answer(request.query)
     
-    # Lưu lịch sử (sử dụng session_id để duy trì context nếu cần)
+    # Lưu lịch sử (chỉ khi có user đăng nhập)
     session_id = request.session_id or str(uuid.uuid4())
-    chat = Chat(session_id=session_id, user_query=request.query, ai_response=response)
-    db.add(chat)
-    db.commit()
+    if user is not None:
+        chat = Chat(session_id=session_id, user_query=request.query, ai_response=response, user_id=user.id)
+        db.add(chat)
+        db.commit()
     
     return ChatResponse(response=response, session_id=session_id)
 
@@ -71,9 +73,11 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 @router.post("/chat/stream")
-def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
+def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not request.query:
         raise HTTPException(status_code=400, detail="Query is required")
+
+    session_id = request.session_id or str(uuid.uuid4())
 
     def event_generator():
         # Stream từng chunk text ra client theo SSE
@@ -89,4 +93,5 @@ def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }
-    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+    response = StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+    return response

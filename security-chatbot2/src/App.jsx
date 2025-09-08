@@ -8,6 +8,7 @@ import LoginModal from './components/LoginModal';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [role, setRole] = useState('anonymous');
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -61,15 +62,18 @@ function App() {
 
     setIsLoading(true);
 
-    // Lấy session cho cuộc hội thoại
+    // Lấy session cho cuộc hội thoại (anonymous vẫn dùng session local, nhưng không lưu server)
     const sessionKey = `session:${currentConversationId}`;
     const sessionId = localStorage.getItem(sessionKey);
 
     try {
       // Dùng SSE stream
+      const headers = { 'Content-Type': 'application/json' };
+      const token = localStorage.getItem('auth:token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ query: text, session_id: sessionId || null })
       });
 
@@ -124,6 +128,8 @@ function App() {
         }
         return conv;
       }));
+
+      // Nếu đã đăng nhập: cập nhật local cache từ server có thể thực hiện here (tối giản: để lần tải lịch sử sau)
     } catch (err) {
       setConversations(prev => prev.map(conv => {
         if (conv.id === currentConversationId) {
@@ -168,6 +174,7 @@ function App() {
     setIsLoggedIn(false);
     setIsUserModalOpen(false);
     localStorage.clear();
+    setRole('anonymous');
   };
 
   return (
@@ -201,6 +208,8 @@ function App() {
         <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={() => {
           setIsLoginModalOpen(false);
           setIsLoggedIn(true);
+          const savedRole = localStorage.getItem('auth:role') || 'user';
+          setRole(savedRole);
         }} />
       )}
     </div>

@@ -12,3 +12,5 @@ underthesea==6.8.0
 bitsandbytes==0.41.3
 langchain==0.0.348  # Nếu cần chain thêm
 python-dotenv==1.0.0
+passlib[bcrypt]==1.7.4
+PyJWT==2.8.0

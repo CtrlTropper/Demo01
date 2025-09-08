@@ -6,6 +6,8 @@ load_dotenv()  # Load .env
 
 from .core.rag_core import init_models  # Khởi tạo models
 from .routers.chat import router as chat_router
+from .routers.auth import router as auth_router
+from .routers.admin import router as admin_router
 from .db.database import engine
 from .db.models import Base
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +28,8 @@ app.add_middleware(
 
 # Đăng ký routers
 app.include_router(chat_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 # Khởi tạo models (embedding, LLM, FAISS)
 init_models()

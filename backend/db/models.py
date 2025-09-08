@@ -1,5 +1,5 @@
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Text, DateTime, func, UniqueConstraint
+from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import Column, Integer, String, Text, DateTime, func, UniqueConstraint, ForeignKey
 
 
 Base = declarative_base()
@@ -13,6 +13,8 @@ class Chat(Base):
     user_query = Column(Text, nullable=False)
     ai_response = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
 
 
 class Document(Base):
@@ -26,5 +28,29 @@ class Document(Base):
     __table_args__ = (
         UniqueConstraint('pdf_name', name='uq_documents_pdf_name'),
     )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="user")  # user | admin
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    chats = relationship("Chat", backref="user")
+    conversations = relationship("Conversation", backref="user")
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False, default="New Chat")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    chats = relationship("Chat", backref="conversation")
 
 
