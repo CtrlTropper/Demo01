@@ -11,7 +11,7 @@ from ..core.embeding import (
     save_embeddings,
     OUTPUT_DIR,
 )
-from ..core.rag import rag_answer  # Từ core
+from ..core.rag import rag_answer, rag_answer_stream  # Từ core
 import uuid
 import os
 
@@ -68,3 +68,25 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "PDF embedded successfully"}
+
+
+@router.post("/chat/stream")
+def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
+    if not request.query:
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    def event_generator():
+        # Stream từng chunk text ra client theo SSE
+        for chunk in rag_answer_stream(request.query):
+            # Định dạng SSE: data: <chunk>\n\n
+            yield f"data: {chunk}\n\n"
+        # Kết thúc stream
+        yield "data: [DONE]\n\n"
+
+    from fastapi.responses import StreamingResponse
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)

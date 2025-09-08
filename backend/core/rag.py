@@ -1,12 +1,13 @@
 import os
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TextIteratorStreamer
 from sentence_transformers import SentenceTransformer
 import faiss
 import pickle
 import numpy as np
 from dotenv import load_dotenv
 import re  # Cho sanitize
+from threading import Thread
 
 load_dotenv()
 
@@ -118,6 +119,34 @@ def rag_answer(query, top_k=3):
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
     return answer.split("<|im_start|>assistant")[-1].strip()
+
+
+def generate_answer_stream(prompt):
+    """Trả về iterator text stream theo thời gian thực."""
+    ensure_initialized()
+    streamer = TextIteratorStreamer(tokenizer, skip_special_tokens=True, skip_prompt=True)
+    encoding = tokenizer(prompt, return_tensors="pt").to(model.device)
+
+    generate_kwargs = dict(
+        input_ids=encoding.input_ids,
+        attention_mask=encoding.attention_mask,
+        max_new_tokens=256,
+        temperature=0.7,
+        do_sample=True,
+        streamer=streamer,
+    )
+
+    thread = Thread(target=model.generate, kwargs=generate_kwargs)
+    thread.start()
+
+    for new_text in streamer:
+        yield new_text
+
+
+def rag_answer_stream(query, top_k=3):
+    context_chunks = get_relevant_chunks(query, top_k)
+    prompt = build_prompt(context_chunks, query)
+    return generate_answer_stream(prompt)
 
 # Test độc lập (comment nếu tích hợp)
 if __name__ == "__main__":

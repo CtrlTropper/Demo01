@@ -66,23 +66,61 @@ function App() {
     const sessionId = localStorage.getItem(sessionKey);
 
     try {
-      const res = await fetch('/api/chat', {
+      // Dùng SSE stream
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: text, session_id: sessionId || null })
       });
 
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok || !res.body) throw new Error('Network response was not ok');
 
-      const data = await res.json();
-      if (data?.session_id && data.session_id !== sessionId) {
-        localStorage.setItem(sessionKey, data.session_id);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let botAccum = '';
+
+      const appendBot = (chunkText) => {
+        botAccum += chunkText;
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === currentConversationId) {
+            // Nếu tin nhắn bot chưa có, thêm mới; nếu có rồi, cập nhật nội dung
+            const msgs = [...conv.messages];
+            const last = msgs[msgs.length - 1];
+            if (!last || last.sender !== 'bot' || !last.streaming) {
+              msgs.push({ sender: 'bot', text: chunkText, streaming: true });
+            } else {
+              msgs[msgs.length - 1] = { ...last, text: botAccum, streaming: true };
+            }
+            return { ...conv, messages: msgs };
+          }
+          return conv;
+        }));
+      };
+
+      // Đọc từng chunk SSE
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const textChunk = decoder.decode(value, { stream: true });
+        const lines = textChunk.split(/\r?\n/);
+        for (const line of lines) {
+          if (!line) continue;
+          if (line.startsWith('data: ')) {
+            const payload = line.slice(6);
+            if (payload === '[DONE]') continue;
+            appendBot(payload);
+          }
+        }
       }
 
-      const botText = data?.response || 'Không nhận được phản hồi từ server.';
+      // Kết thúc streaming: bỏ cờ streaming
       setConversations(prev => prev.map(conv => {
         if (conv.id === currentConversationId) {
-          return { ...conv, messages: [...conv.messages, { sender: 'bot', text: botText }] };
+          const msgs = [...conv.messages];
+          if (msgs.length && msgs[msgs.length - 1].streaming) {
+            msgs[msgs.length - 1] = { sender: 'bot', text: msgs[msgs.length - 1].text };
+          }
+          return { ...conv, messages: msgs };
         }
         return conv;
       }));
