@@ -68,7 +68,8 @@ const LoginModal = ({ onClose, onLogin }) => {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div className="bg-dark-slate text-white p-8 rounded-xl shadow-lg w-full max-w-md glass-effect">
+      <div className="bg-dark-slate text-white p-8 rounded-xl shadow-lg w-full max-w-md glass-effect relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-white">×</button>
         <h2 className="text-2xl font-bold mb-6 text-center">Đăng nhập</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">

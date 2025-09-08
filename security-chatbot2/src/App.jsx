@@ -190,7 +190,7 @@ function App() {
         onRename={renameConversation}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        isAdmin={user.isAdmin}
+        isAdmin={role === 'admin'}
       />
       <div className="flex-1 flex flex-col">
         <Header 

@@ -5,7 +5,8 @@ const UserModal = ({ user, onClose, onLogout }) => {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div className="bg-dark-slate text-white p-6 rounded-lg shadow-lg w-80">
+      <div className="bg-dark-slate text-white p-6 rounded-lg shadow-lg w-80 relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-white">×</button>
         <h2 className="text-xl font-bold mb-4">Thông tin người dùng</h2>
         <p><strong>Tên:</strong> {user.name}</p>
         <p><strong>Chức vụ:</strong> {user.position}</p>

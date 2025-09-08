@@ -92,8 +92,8 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
               </div>
             ))}
           </div>
-          <div className="p-4 border-t border-neon-cyan">
-            {isAdmin && (
+          {isAdmin && (
+            <div className="p-4 border-t border-neon-cyan">
               <button 
                 onClick={handleManageUsers}
                 className="w-full bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center mb-2"
@@ -101,15 +101,15 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
                 <UsersIcon className="h-5 w-5 mr-2" />
                 Quản lý người dùng
               </button>
-            )}
-            <button 
-              onClick={handleManageFiles}
-              className="w-full bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center"
-            >
-              <FolderIcon className="h-5 w-5 mr-2" />
-              Quản lý File
-            </button>
-          </div>
+              <button 
+                onClick={handleManageFiles}
+                className="w-full bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center"
+              >
+                <FolderIcon className="h-5 w-5 mr-2" />
+                Quản lý File
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
