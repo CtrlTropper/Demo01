@@ -1,15 +1,14 @@
-fastapi
-uvicorn
-torch
-transformers
-sentence-transformers
-faiss-cpu  # hoặc faiss-gpu nếu có GPU
-bitsandbytes
-pytesseract
-pillow
-underthesea
-pymupdf
-pyyaml
-sqlalchemy
-passlib[bcrypt]
-pyjwt
+fastapi==0.104.1
+uvicorn==0.24.0
+sqlalchemy==2.0.23
+pydantic==2.5.2
+transformers==4.35.2
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4  # Hoặc faiss-gpu nếu dùng GPU
+pymupdf==1.23.7
+pytesseract==0.3.10
+pillow==10.1.0
+underthesea==6.8.0
+bitsandbytes==0.41.3
+langchain==0.0.348  # Nếu cần chain thêm
+python-dotenv==1.0.0

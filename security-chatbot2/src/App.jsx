@@ -4,42 +4,24 @@ import ChatWindow from './components/ChatWindow';
 import InputBox from './components/InputBox';
 import Sidebar from './components/Sidebar';
 import UserModal from './components/UserModal';
-import Login from './components/Login';
-
-const API_BASE = 'http://127.0.0.1:8000';
+import LoginModal from './components/LoginModal';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [token, setToken] = useState('');
-  const [user, setUser] = useState({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  const fetchMe = async (tkn) => {
-    try {
-      const res = await fetch(`${API_BASE}/me`, {
-        headers: { 'Authorization': `Bearer ${tkn}` }
-      });
-      if (!res.ok) throw new Error('Failed to get profile');
-      const data = await res.json();
-      setUser({ name: data.username, position: 'User', unit: '', isAdmin: !!data.is_admin });
-    } catch (e) {
-      setUser({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
-    }
+  const user = {
+    name: 'John Doe',
+    position: 'Developer',
+    unit: 'IT Department',
+    isAdmin: true,
   };
-
-  useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      setToken(savedToken);
-      setIsLoggedIn(true);
-      fetchMe(savedToken);
-    }
-  }, []);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -76,43 +58,18 @@ function App() {
         }
         return conv;
       });
+      setIsLoading(true);
+      setTimeout(() => {
+        setConversations(prevUpdated => prevUpdated.map(c => {
+          if (c.id === currentConversationId) {
+            return { ...c, messages: [...c.messages, { sender: 'bot', text: 'Chatbot đang xử lý câu hỏi của bạn...' }] };
+          }
+          return c;
+        }));
+        setIsLoading(false);
+      }, 1000);
       return updated;
     });
-
-    setIsLoading(true);
-    fetch(`${API_BASE}/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ query: text }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(txt || 'Request failed');
-        }
-        return res.json();
-      })
-      .then(data => {
-        const botText = data?.response || 'Không nhận được phản hồi.';
-        setConversations(prevUpdated => prevUpdated.map(c => {
-          if (c.id === currentConversationId) {
-            return { ...c, messages: [...c.messages, { sender: 'bot', text: botText }] };
-          }
-          return c;
-        }));
-      })
-      .catch(err => {
-        setConversations(prevUpdated => prevUpdated.map(c => {
-          if (c.id === currentConversationId) {
-            return { ...c, messages: [...c.messages, { sender: 'bot', text: `Lỗi: ${err.message}` }] };
-          }
-          return c;
-        }));
-      })
-      .finally(() => setIsLoading(false));
   };
 
   const selectConversation = (id) => {
@@ -145,15 +102,9 @@ function App() {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
-    setIsModalOpen(false);
-    setToken('');
+    setIsUserModalOpen(false);
     localStorage.clear();
-    setUser({ name: 'Guest', position: 'Guest', unit: '', isAdmin: false });
   };
-
-  if (!isLoggedIn) {
-    return <Login onLogin={(sessionToken) => { localStorage.setItem('token', sessionToken); setToken(sessionToken); setIsLoggedIn(true); fetchMe(sessionToken); }} />;
-  }
 
   return (
     <div className="h-screen flex bg-dark-slate">
@@ -171,12 +122,22 @@ function App() {
         isAdmin={user.isAdmin}
       />
       <div className="flex-1 flex flex-col">
-        <Header onOpenModal={() => setIsModalOpen(true)} />
+        <Header 
+          isLoggedIn={isLoggedIn}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          onOpenUserModal={() => setIsUserModalOpen(true)}
+        />
         <ChatWindow messages={currentMessages.concat(isLoading ? [{ sender: 'bot', text: 'Đang xử lý...' }] : [])} />
         <InputBox onSendMessage={handleSendMessage} />
       </div>
-      {isModalOpen && (
-        <UserModal user={user} onClose={() => setIsModalOpen(false)} onLogout={handleLogout} />
+      {isUserModalOpen && (
+        <UserModal user={user} onClose={() => setIsUserModalOpen(false)} onLogout={handleLogout} />
+      )}
+      {isLoginModalOpen && (
+        <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={() => {
+          setIsLoginModalOpen(false);
+          setIsLoggedIn(true);
+        }} />
       )}
     </div>
   );
