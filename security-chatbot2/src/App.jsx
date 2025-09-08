@@ -48,28 +48,54 @@ function App() {
     setCurrentConversationId(newId);
   };
 
-  const handleSendMessage = (text) => {
-    setConversations(prev => {
-      const updated = prev.map(conv => {
+  const handleSendMessage = async (text) => {
+    // Đẩy tin nhắn người dùng vào hội thoại hiện tại
+    setConversations(prev => prev.map(conv => {
+      if (conv.id === currentConversationId) {
+        const newMessages = [...conv.messages, { sender: 'user', text }];
+        const newTitle = conv.messages.length === 0 ? text.slice(0, 30) + (text.length > 30 ? '...' : '') : conv.title;
+        return { ...conv, title: newTitle, messages: newMessages };
+      }
+      return conv;
+    }));
+
+    setIsLoading(true);
+
+    // Lấy session cho cuộc hội thoại
+    const sessionKey = `session:${currentConversationId}`;
+    const sessionId = localStorage.getItem(sessionKey);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text, session_id: sessionId || null })
+      });
+
+      if (!res.ok) throw new Error('Network response was not ok');
+
+      const data = await res.json();
+      if (data?.session_id && data.session_id !== sessionId) {
+        localStorage.setItem(sessionKey, data.session_id);
+      }
+
+      const botText = data?.response || 'Không nhận được phản hồi từ server.';
+      setConversations(prev => prev.map(conv => {
         if (conv.id === currentConversationId) {
-          const newMessages = [...conv.messages, { sender: 'user', text }];
-          const newTitle = conv.messages.length === 0 ? text.slice(0, 30) + (text.length > 30 ? '...' : '') : conv.title;
-          return { ...conv, title: newTitle, messages: newMessages };
+          return { ...conv, messages: [...conv.messages, { sender: 'bot', text: botText }] };
         }
         return conv;
-      });
-      setIsLoading(true);
-      setTimeout(() => {
-        setConversations(prevUpdated => prevUpdated.map(c => {
-          if (c.id === currentConversationId) {
-            return { ...c, messages: [...c.messages, { sender: 'bot', text: 'Chatbot đang xử lý câu hỏi của bạn...' }] };
-          }
-          return c;
-        }));
-        setIsLoading(false);
-      }, 1000);
-      return updated;
-    });
+      }));
+    } catch (err) {
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === currentConversationId) {
+          return { ...conv, messages: [...conv.messages, { sender: 'bot', text: 'Có lỗi khi gọi API.' }] };
+        }
+        return conv;
+      }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const selectConversation = (id) => {
