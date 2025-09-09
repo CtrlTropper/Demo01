@@ -78,13 +78,15 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
                   >
                     Xem
                   </a>
-                  {!it.embedded && (
+                  {!it.embedded ? (
                     <button
                       className="px-3 py-1 rounded bg-primary-blue text-white hover:bg-opacity-80"
                       onClick={() => handleEmbed(it)}
                     >
                       Nhúng
                     </button>
+                  ) : (
+                    <span className="px-3 py-1 rounded bg-emerald-700 text-white text-sm">Đã nhúng</span>
                   )}
                   <button
                     className={`px-3 py-1 rounded ${activeDoc?.pdf_name === it.pdf_name ? 'bg-primary-blue text-white' : 'bg-gray-700 text-white hover:bg-opacity-80'}`}

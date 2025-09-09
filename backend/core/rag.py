@@ -13,7 +13,7 @@ load_dotenv()
 
 # Paths từ .env (mặc định về thư mục `backend/data`)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
+DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "results")
 
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/models/multilingual_e5_large")
 LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/vinallama-2.7b-chat")
