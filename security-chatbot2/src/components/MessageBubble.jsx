@@ -4,6 +4,8 @@ import { useState } from 'react';
 const MessageBubble = ({ sender, text, streaming = false }) => {
   const isUser = sender === 'user';
   const [copied, setCopied] = useState(false);
+  const containsDoneToken = !!(text && text.includes('[DONE]'));
+  const displayText = (text || '').replaceAll('[DONE]', '').trimEnd();
 
   const handleCopy = async () => {
     try {
@@ -24,7 +26,7 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
             : 'glass-effect text-white'
         }`}
       >
-        {text || (streaming ? (
+        {displayText || (streaming ? (
           <span className="inline-flex items-center">
             <span className="mr-2">Đang tạo câu trả lời</span>
             <span className="inline-flex">
@@ -34,7 +36,7 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
             </span>
           </span>
         ) : null)}
-        {!streaming && !isUser && text && (
+        {!streaming && !isUser && (displayText || containsDoneToken) && (
           <div className="absolute -top-3 -right-3 flex items-center gap-2">
             <button
               onClick={handleCopy}
@@ -43,6 +45,11 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
             >
               {copied ? <CheckIcon className="h-4 w-4 text-matrix-green" /> : <ClipboardIcon className="h-4 w-4" />}
             </button>
+          </div>
+        )}
+        {!streaming && !isUser && containsDoneToken && (
+          <div className="mt-2 inline-flex items-center text-xs text-gray-300 bg-gray-700/60 px-2 py-0.5 rounded">
+            <CheckIcon className="h-3 w-3 text-matrix-green mr-1" /> Hoàn tất
           </div>
         )}
       </div>
