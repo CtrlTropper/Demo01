@@ -16,6 +16,9 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   // Không dùng modal người dùng/đăng nhập
   const [isDocsOpen, setIsDocsOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [docsRefreshKey, setDocsRefreshKey] = useState(0);
 
   // Không cần thông tin người dùng
 
@@ -154,25 +157,46 @@ function App() {
 
   const handleUploadPdf = async (file) => {
     if (!file) return;
+    setUploading(true);
+    setUploadProgress(0);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      const headers = {};
-      const res = await fetch('/api/upload-pdf', {
-        method: 'POST',
-        headers,
-        body: form
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload-pdf');
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setUploadProgress((e.loaded / e.total) * 100);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data && data.doc_id && data.pdf_name) {
+                setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
+              } else if (data && data.message === 'PDF already embedded' && data.doc_id) {
+                setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
+              }
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        const form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
       });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
-      if (data && data.doc_id && data.pdf_name) {
-        setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
-      } else if (data && data.message === 'PDF already embedded' && data.doc_id) {
-        setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
-      }
+      setDocsRefreshKey((k) => k + 1);
     } catch (e) {
       console.error(e);
       alert('Tải PDF thất bại');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -227,7 +251,7 @@ function App() {
           activeDocName={activeDoc?.pdf_name}
         />
         <ChatWindow messages={currentMessages} isLoading={isLoading} />
-        <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} onStop={handleStop} />
+        <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} onStop={handleStop} uploading={uploading} uploadProgress={uploadProgress} />
       </div>
       
       {isDocsOpen && (
@@ -238,6 +262,7 @@ function App() {
             setActiveDoc(doc);
             setIsDocsOpen(false);
           }}
+          refreshKey={docsRefreshKey}
         />
       )}
     </div>

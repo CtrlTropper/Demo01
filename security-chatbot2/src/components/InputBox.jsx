@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PaperAirplaneIcon, ArrowUpTrayIcon, StopIcon } from '@heroicons/react/24/solid';
 
-const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false, onStop }) => {
+const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false, onStop, uploading = false, uploadProgress = 0 }) => {
   const [input, setInput] = useState('');
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -89,6 +89,14 @@ const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false,
           </button>
         )}
       </div>
+      {uploading && (
+        <div className="mt-2">
+          <div className="h-2 w-full bg-gray-700 rounded">
+            <div className="h-2 bg-primary-blue rounded" style={{ width: `${Math.max(0, Math.min(100, uploadProgress))}%` }} />
+          </div>
+          <div className="text-xs text-gray-400 mt-1">Đang tải lên... {Math.floor(Math.max(0, Math.min(100, uploadProgress)))}%</div>
+        </div>
+      )}
       {activeDocName ? (
         <div className="mt-2 text-xs text-gray-400">Đang tập trung vào: {activeDocName}</div>
       ) : null}

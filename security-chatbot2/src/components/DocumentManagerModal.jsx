@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
+const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
@@ -20,7 +20,7 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
       }
     };
     fetchDocs();
-  }, []);
+  }, [refreshKey]);
 
   const buildViewHref = (it) => {
     const base = `/api/documents/${encodeURIComponent(it.pdf_name)}`;
