@@ -18,11 +18,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Paths từ .env (hoặc hardcode nếu test độc lập)
+# Paths từ .env (hoặc mặc định về thư mục `backend/data` trong dự án)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
+
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/models/multilingual_e5_large")
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_faiss.index")
-EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_embeddings.pkl")
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "D:/Vian/Step2_Embeding_and_VectorDB/results")
+FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", os.path.join(DEFAULT_DATA_DIR, "all_faiss.index"))
+EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", os.path.join(DEFAULT_DATA_DIR, "all_embeddings.pkl"))
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", DEFAULT_DATA_DIR)
 
 # Load models
 model = SentenceTransformer(EMBEDDING_MODEL_PATH)

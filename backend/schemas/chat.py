@@ -4,6 +4,7 @@ from typing import Optional
 class ChatRequest(BaseModel):
     query: str
     session_id: Optional[str] = None  # Để duy trì lịch sử nếu cần
+    doc_id: Optional[int] = None  # Tùy chọn: giới hạn truy vấn theo tài liệu đã upload
 
 class ChatResponse(BaseModel):
     response: str

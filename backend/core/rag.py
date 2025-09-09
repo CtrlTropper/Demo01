@@ -11,11 +11,14 @@ from threading import Thread
 
 load_dotenv()
 
-# Paths từ .env
+# Paths từ .env (mặc định về thư mục `backend/data`)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
+
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/models/multilingual_e5_large")
 LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/vinallama-2.7b-chat")
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_faiss.index")
-EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_embeddings.pkl")
+FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", os.path.join(DEFAULT_DATA_DIR, "all_faiss.index"))
+EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", os.path.join(DEFAULT_DATA_DIR, "all_embeddings.pkl"))
 
 # Cấu hình sinh
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
@@ -73,8 +76,38 @@ def sanitize_input(text: str) -> str:
     text = re.sub(r'[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r]', '', text)
     return text.strip()
 
-def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512):
+def _trim_chunk_tokens(chunk: str, max_tokens_per_chunk: int) -> str:
+    tokens = tokenizer.tokenize(chunk)
+    if len(tokens) > max_tokens_per_chunk:
+        tokens = tokens[:max_tokens_per_chunk]
+        return tokenizer.convert_tokens_to_string(tokens)
+    return chunk
+
+
+def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
     query = sanitize_input(query)
+    # Nếu chỉ định tài liệu, ưu tiên dùng index và chunks theo tài liệu đó
+    if pdf_name:
+        doc_dir = os.path.join(DEFAULT_DATA_DIR, pdf_name)
+        index_path = os.path.join(doc_dir, f"{pdf_name}_faiss.index")
+        pickle_path = os.path.join(doc_dir, f"{pdf_name}_embeddings.pkl")
+        if os.path.exists(index_path) and os.path.exists(pickle_path):
+            local_index = faiss.read_index(index_path)
+            with open(pickle_path, "rb") as f:
+                local_data = pickle.load(f)
+            local_chunks = local_data.get("chunks", [])
+            if len(local_chunks) == 0:
+                return []
+            query_vector = embedding_model.encode([query])
+            D, I = local_index.search(np.array(query_vector).astype("float32"), top_k)
+            context_chunks = []
+            for i in I[0]:
+                if i < len(local_chunks):
+                    chunk = _trim_chunk_tokens(local_chunks[i], max_tokens_per_chunk)
+                    context_chunks.append(chunk.strip())
+            return context_chunks
+
+    # Ngược lại, dùng index toàn cục
     if faiss_index is None or len(chunks) == 0:
         return []
     query_vector = embedding_model.encode([query])
@@ -82,11 +115,7 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512):
     context_chunks = []
     for i in I[0]:
         if i < len(chunks):
-            chunk = chunks[i]
-            tokens = tokenizer.tokenize(chunk)
-            if len(tokens) > max_tokens_per_chunk:
-                tokens = tokens[:max_tokens_per_chunk]
-                chunk = tokenizer.convert_tokens_to_string(tokens)
+            chunk = _trim_chunk_tokens(chunks[i], max_tokens_per_chunk)
             context_chunks.append(chunk.strip())
     return context_chunks
 
@@ -116,9 +145,9 @@ def generate_answer(prompt):
     )
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-def rag_answer(query, top_k=3):
+def rag_answer(query, top_k=3, pdf_name: str | None = None):
     ensure_initialized()
-    context_chunks = get_relevant_chunks(query, top_k)
+    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
     return answer.split("<|im_start|>assistant")[-1].strip()
@@ -146,8 +175,8 @@ def generate_answer_stream(prompt):
         yield new_text
 
 
-def rag_answer_stream(query, top_k=3):
-    context_chunks = get_relevant_chunks(query, top_k)
+def rag_answer_stream(query, top_k=3, pdf_name: str | None = None):
+    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
     prompt = build_prompt(context_chunks, query)
     return generate_answer_stream(prompt)
 

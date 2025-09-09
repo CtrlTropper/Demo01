@@ -23,8 +23,16 @@ def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db), user=Depe
     if not request.query:
         raise HTTPException(status_code=400, detail="Query is required")
     
+    # Xác định tài liệu (nếu có) để lọc ngữ cảnh
+    pdf_name = None
+    if request.doc_id is not None:
+        doc = db.query(Document).filter(Document.id == request.doc_id).first()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        pdf_name = doc.pdf_name
+
     # Generate response
-    response = rag_answer(request.query)
+    response = rag_answer(request.query, pdf_name=pdf_name)
     
     # Lưu lịch sử (chỉ khi có user đăng nhập)
     session_id = request.session_id or str(uuid.uuid4())
@@ -45,7 +53,7 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     # Nếu đã tồn tại trong DB thì bỏ qua để tránh embed trùng
     existing = db.query(Document).filter(Document.pdf_name == pdf_name).first()
     if existing:
-        return {"message": "PDF already embedded"}
+        return {"message": "PDF already embedded", "doc_id": existing.id, "pdf_name": pdf_name}
 
     # Lưu file tạm vào OUTPUT_DIR/uploads để xử lý OCR/Embedding
     uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
@@ -69,7 +77,7 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     db.add(doc)
     db.commit()
 
-    return {"message": "PDF embedded successfully"}
+    return {"message": "PDF embedded successfully", "doc_id": doc.id, "pdf_name": pdf_name}
 
 
 @router.post("/chat/stream")
@@ -81,7 +89,15 @@ def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db), us
 
     def event_generator():
         # Stream từng chunk text ra client theo SSE
-        for chunk in rag_answer_stream(request.query):
+        pdf_name = None
+        if request.doc_id is not None:
+            doc = db.query(Document).filter(Document.id == request.doc_id).first()
+            if doc is None:
+                # Nếu tài liệu không tồn tại, dừng stream với thông báo lỗi
+                yield f"data: Tài liệu không tồn tại.\n\n"
+                return
+            pdf_name = doc.pdf_name
+        for chunk in rag_answer_stream(request.query, pdf_name=pdf_name):
             if not chunk:
                 continue
             # SSE chuẩn: mỗi dòng dữ liệu đều bắt đầu bằng 'data:'

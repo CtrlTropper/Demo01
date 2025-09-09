@@ -12,6 +12,7 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeDoc, setActiveDoc] = useState(null); // { id, pdf_name }
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -75,7 +76,7 @@ function App() {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query: text, session_id: sessionId || null })
+        body: JSON.stringify({ query: text, session_id: sessionId || null, doc_id: activeDoc?.id || null })
       });
 
       if (!res.ok || !res.body) throw new Error('Network response was not ok');
@@ -149,6 +150,32 @@ function App() {
     }
   };
 
+  const handleUploadPdf = async (file) => {
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const headers = {};
+      const token = localStorage.getItem('auth:token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/upload-pdf', {
+        method: 'POST',
+        headers,
+        body: form
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      if (data && data.doc_id && data.pdf_name) {
+        setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
+      } else if (data && data.message === 'PDF already embedded' && data.doc_id) {
+        setActiveDoc({ id: data.doc_id, pdf_name: data.pdf_name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Tải PDF thất bại');
+    }
+  };
+
   const selectConversation = (id) => {
     setCurrentConversationId(id);
   };
@@ -206,7 +233,7 @@ function App() {
           onOpenUserModal={() => setIsUserModalOpen(true)}
         />
         <ChatWindow messages={currentMessages} isLoading={isLoading} />
-        <InputBox onSendMessage={handleSendMessage} disabled={isLoading} />
+        <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} />
       </div>
       {isUserModalOpen && (
         <UserModal user={user} onClose={() => setIsUserModalOpen(false)} onLogout={handleLogout} />
