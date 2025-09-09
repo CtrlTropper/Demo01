@@ -50,6 +50,7 @@ function App() {
   };
 
   const handleSendMessage = async (text) => {
+    if (isLoading) return;
     // Đẩy tin nhắn người dùng vào hội thoại hiện tại
     setConversations(prev => prev.map(conv => {
       if (conv.id === currentConversationId) {
@@ -204,8 +205,8 @@ function App() {
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
           onOpenUserModal={() => setIsUserModalOpen(true)}
         />
-        <ChatWindow messages={currentMessages.concat(isLoading ? [{ sender: 'bot', text: 'Đang xử lý...' }] : [])} />
-        <InputBox onSendMessage={handleSendMessage} />
+        <ChatWindow messages={currentMessages} isLoading={isLoading} />
+        <InputBox onSendMessage={handleSendMessage} disabled={isLoading} />
       </div>
       {isUserModalOpen && (
         <UserModal user={user} onClose={() => setIsUserModalOpen(false)} onLogout={handleLogout} />

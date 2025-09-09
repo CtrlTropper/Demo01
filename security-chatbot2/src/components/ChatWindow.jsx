@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import MessageBubble from './MessageBubble';
 
-const ChatWindow = ({ messages }) => {
+const ChatWindow = ({ messages, isLoading }) => {
   const chatRef = useRef(null);
 
   useEffect(() => {
@@ -19,8 +19,11 @@ const ChatWindow = ({ messages }) => {
       className="flex-1 overflow-y-auto p-6 bg-dark-slate space-y-6"
     >
       {messages.map((msg, index) => (
-        <MessageBubble key={index} sender={msg.sender} text={msg.text} />
+        <MessageBubble key={index} sender={msg.sender} text={msg.text} streaming={msg.streaming} />
       ))}
+      {isLoading && (
+        <MessageBubble sender="bot" text="" streaming={true} />
+      )}
     </div>
   );
 };

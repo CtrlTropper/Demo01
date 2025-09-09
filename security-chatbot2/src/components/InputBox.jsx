@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
 
-const InputBox = ({ onSendMessage }) => {
+const InputBox = ({ onSendMessage, disabled = false }) => {
   const [input, setInput] = useState('');
 
   const handleSend = () => {
+    if (disabled) return;
     if (input.trim()) {
       onSendMessage(input);
       setInput('');
@@ -18,12 +19,14 @@ const InputBox = ({ onSendMessage }) => {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         placeholder="Nhập câu hỏi..."
-        className="flex-1 p-3 rounded-l-xl bg-dark-slate text-white placeholder-gray-400 border-none focus:outline-none focus:ring-2 focus:ring-neon-cyan transition glass-effect"
+        className={`flex-1 p-3 rounded-l-xl bg-dark-slate text-white placeholder-gray-400 border-none focus:outline-none focus:ring-2 focus:ring-neon-cyan transition glass-effect ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        disabled={disabled}
       />
       <button
         onClick={handleSend}
-        className="bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft animate-glow"
+        className={`bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft animate-glow ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-opacity-100' : ''}`}
+        disabled={disabled}
       >
         <PaperAirplaneIcon className="h-6 w-6" />
       </button>
