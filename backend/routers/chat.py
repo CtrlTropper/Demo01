@@ -137,80 +137,116 @@ def list_documents(db: Session = Depends(get_db)):
             "embedded": is_embedded_by_pdf_name(d.pdf_name, OUTPUT_DIR),
             "category": "Uploads",
         })
-    # Liệt kê tài liệu ban đầu trong OUTPUT_DIR/initial_docs (không nằm DB)
-    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
-    if os.path.exists(initial_dir):
-        for root, _, files in os.walk(initial_dir):
-            for fname in files:
-                if not fname.lower().endswith('.pdf'):
-                    continue
-                name = os.path.splitext(fname)[0]
-                rel = os.path.relpath(root, initial_dir)
-                category = rel if rel != "." else "Initial"
-                results.append({
-                    "id": None,
-                    "pdf_name": name,
-                    "path": os.path.join(root, fname),
-                    "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR),
-                    "category": category,
-                })
+    # Liệt kê tài liệu ban đầu trong initial_docs của cả results và data (không nằm DB)
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    initial_dirs = [
+        os.path.join(OUTPUT_DIR, "initial_docs"),
+        os.path.join(backend_dir, "data", "initial_docs"),
+    ]
+    seen = set((item["pdf_name"], item["category"]) for item in results)
+    for initial_dir in initial_dirs:
+        if os.path.exists(initial_dir):
+            for root, _, files in os.walk(initial_dir):
+                for fname in files:
+                    if not fname.lower().endswith('.pdf'):
+                        continue
+                    name = os.path.splitext(fname)[0]
+                    rel = os.path.relpath(root, initial_dir)
+                    category = rel if rel != "." else "Initial"
+                    key = (name, category)
+                    if key in seen:
+                        continue
+                    results.append({
+                        "id": None,
+                        "pdf_name": name,
+                        "path": os.path.join(root, fname),
+                        "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR),
+                        "category": category,
+                    })
+                    seen.add(key)
     return {"items": results}
 
 
 @router.get("/documents/{pdf_name}")
 def view_document(pdf_name: str, category: str | None = None):
-    # Ưu tiên trong uploads, sau đó initial_docs
-    uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
-    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
-    # Tìm trong uploads
-    fpath = os.path.join(uploads_dir, f"{pdf_name}.pdf")
-    if os.path.exists(fpath):
-        return FileResponse(fpath, media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    # Ưu tiên trong uploads (cả results và data), sau đó initial_docs (cả results và data)
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    uploads_dirs = [
+        os.path.join(OUTPUT_DIR, "uploads"),
+        os.path.join(backend_dir, "data", "uploads"),
+    ]
+    initial_dirs = [
+        os.path.join(OUTPUT_DIR, "initial_docs"),
+        os.path.join(backend_dir, "data", "initial_docs"),
+    ]
+    # Tìm trong uploads (phẳng)
+    for up_dir in uploads_dirs:
+        fpath = os.path.join(up_dir, f"{pdf_name}.pdf")
+        if os.path.exists(fpath):
+            return FileResponse(fpath, media_type='application/pdf', filename=f"{pdf_name}.pdf")
     # Tìm theo category nếu cung cấp
     if category:
-        base = os.path.join(initial_dir, category)
+        for base in initial_dirs:
+            cat_dir = os.path.join(base, category)
+            if os.path.isdir(cat_dir):
+                for root, _, files in os.walk(cat_dir):
+                    for fname in files:
+                        if fname.lower() == f"{pdf_name.lower()}.pdf":
+                            return FileResponse(os.path.join(root, fname), media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    # Fallback: tìm đệ quy trong initial_docs
+    for base in initial_dirs:
         if os.path.isdir(base):
             for root, _, files in os.walk(base):
                 for fname in files:
                     if fname.lower() == f"{pdf_name.lower()}.pdf":
                         return FileResponse(os.path.join(root, fname), media_type='application/pdf', filename=f"{pdf_name}.pdf")
-    # Fallback: tìm đệ quy trong initial_docs
-    if os.path.isdir(initial_dir):
-        for root, _, files in os.walk(initial_dir):
-            for fname in files:
-                if fname.lower() == f"{pdf_name.lower()}.pdf":
-                    return FileResponse(os.path.join(root, fname), media_type='application/pdf', filename=f"{pdf_name}.pdf")
     raise HTTPException(status_code=404, detail="Document file not found")
 
 
 @router.post("/documents/{pdf_name}/embed")
 def embed_existing_document(pdf_name: str, category: str | None = None):
-    # Tìm file trong uploads hoặc initial_docs
-    uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
-    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
+    # Tìm file trong uploads hoặc initial_docs (cả results và data)
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    uploads_dirs = [
+        os.path.join(OUTPUT_DIR, "uploads"),
+        os.path.join(backend_dir, "data", "uploads"),
+    ]
+    initial_dirs = [
+        os.path.join(OUTPUT_DIR, "initial_docs"),
+        os.path.join(backend_dir, "data", "initial_docs"),
+    ]
     pdf_path = None
     # Tìm trong uploads (phẳng)
-    f_up = os.path.join(uploads_dir, f"{pdf_name}.pdf")
-    if os.path.exists(f_up):
-        pdf_path = f_up
+    for up_dir in uploads_dirs:
+        f_up = os.path.join(up_dir, f"{pdf_name}.pdf")
+        if os.path.exists(f_up):
+            pdf_path = f_up
+            break
     # Tìm theo category (nếu có)
     if pdf_path is None and category:
-        base = os.path.join(initial_dir, category)
-        if os.path.isdir(base):
-            for root, _, files in os.walk(base):
-                for fname in files:
-                    if fname.lower() == f"{pdf_name.lower()}.pdf":
-                        pdf_path = os.path.join(root, fname)
+        for base in initial_dirs:
+            cat_dir = os.path.join(base, category)
+            if os.path.isdir(cat_dir):
+                for root, _, files in os.walk(cat_dir):
+                    for fname in files:
+                        if fname.lower() == f"{pdf_name.lower()}.pdf":
+                            pdf_path = os.path.join(root, fname)
+                            break
+                    if pdf_path:
                         break
-                if pdf_path:
-                    break
+            if pdf_path:
+                break
     # Fallback: tìm đệ quy trong initial_docs
-    if pdf_path is None and os.path.isdir(initial_dir):
-        for root, _, files in os.walk(initial_dir):
-            for fname in files:
-                if fname.lower() == f"{pdf_name.lower()}.pdf":
-                    pdf_path = os.path.join(root, fname)
-                    break
+    if pdf_path is None:
+        for base in initial_dirs:
+            if os.path.isdir(base):
+                for root, _, files in os.walk(base):
+                    for fname in files:
+                        if fname.lower() == f"{pdf_name.lower()}.pdf":
+                            pdf_path = os.path.join(root, fname)
+                            break
+                    if pdf_path:
+                        break
             if pdf_path:
                 break
     if pdf_path is None:
