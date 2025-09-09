@@ -3,41 +3,30 @@ import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
 import InputBox from './components/InputBox';
 import Sidebar from './components/Sidebar';
-import UserModal from './components/UserModal';
-import LoginModal from './components/LoginModal';
 import DocumentManagerModal from './components/DocumentManagerModal';
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [role, setRole] = useState('anonymous');
+  // Loại bỏ đăng nhập/phân quyền
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeDoc, setActiveDoc] = useState(null); // { id, pdf_name }
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  // Không dùng modal người dùng/đăng nhập
   const [isDocsOpen, setIsDocsOpen] = useState(false);
 
-  const user = {
-    name: 'John Doe',
-    position: 'Developer',
-    unit: 'IT Department',
-    isAdmin: true,
-  };
+  // Không cần thông tin người dùng
 
   useEffect(() => {
-    if (isLoggedIn) {
-      const storedConversations = JSON.parse(localStorage.getItem('conversations')) || [];
-      setConversations(storedConversations);
-      if (storedConversations.length > 0) {
-        setCurrentConversationId(storedConversations[0].id);
-      } else {
-        createNewConversation();
-      }
+    const storedConversations = JSON.parse(localStorage.getItem('conversations')) || [];
+    setConversations(storedConversations);
+    if (storedConversations.length > 0) {
+      setCurrentConversationId(storedConversations[0].id);
+    } else {
+      createNewConversation();
     }
-  }, [isLoggedIn]);
+  }, []);
 
   useEffect(() => {
     if (conversations.length > 0) {
@@ -73,8 +62,6 @@ function App() {
     try {
       // Dùng SSE stream
       const headers = { 'Content-Type': 'application/json' };
-      const token = localStorage.getItem('auth:token');
-      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers,
@@ -158,8 +145,6 @@ function App() {
       const form = new FormData();
       form.append('file', file);
       const headers = {};
-      const token = localStorage.getItem('auth:token');
-      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/upload-pdf', {
         method: 'POST',
         headers,
@@ -206,12 +191,7 @@ function App() {
 
   const currentMessages = conversations.find(conv => conv.id === currentConversationId)?.messages || [];
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setIsUserModalOpen(false);
-    localStorage.clear();
-    setRole('anonymous');
-  };
+  // Không còn đăng xuất
 
   return (
     <div className="h-screen flex bg-dark-slate">
@@ -226,29 +206,17 @@ function App() {
         onRename={renameConversation}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        isAdmin={role === 'admin'}
+        
       />
       <div className="flex-1 flex flex-col">
         <Header 
-          isLoggedIn={isLoggedIn}
-          onOpenLoginModal={() => setIsLoginModalOpen(true)}
-          onOpenUserModal={() => setIsUserModalOpen(true)}
+          
           onOpenDocs={() => setIsDocsOpen(true)}
         />
         <ChatWindow messages={currentMessages} isLoading={isLoading} />
         <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} />
       </div>
-      {isUserModalOpen && (
-        <UserModal user={user} onClose={() => setIsUserModalOpen(false)} onLogout={handleLogout} />
-      )}
-      {isLoginModalOpen && (
-        <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={() => {
-          setIsLoginModalOpen(false);
-          setIsLoggedIn(true);
-          const savedRole = localStorage.getItem('auth:role') || 'user';
-          setRole(savedRole);
-        }} />
-      )}
+      
       {isDocsOpen && (
         <DocumentManagerModal
           onClose={() => setIsDocsOpen(false)}

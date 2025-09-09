@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, FolderIcon, UsersIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 
-const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewChat, onDelete, onRename, searchTerm, setSearchTerm, isAdmin }) => {
+const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewChat, onDelete, onRename, searchTerm, setSearchTerm }) => {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
 
@@ -17,13 +17,7 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
     setEditingId(null);
   };
 
-  const handleManageUsers = () => {
-    alert('Quản lý người dùng');
-  };
-
-  const handleManageFiles = () => {
-    alert('Quản lý file');
-  };
+  // Bỏ các chức năng quản trị
 
   return (
     <div className={`bg-dark-slate text-white flex flex-col shadow-md transition-all duration-300 ${isOpen ? 'w-72' : 'w-12'} glass-effect`}>
@@ -92,24 +86,7 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
               </div>
             ))}
           </div>
-          {isAdmin && (
-            <div className="p-4 border-t border-neon-cyan">
-              <button 
-                onClick={handleManageUsers}
-                className="w-full bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center mb-2"
-              >
-                <UsersIcon className="h-5 w-5 mr-2" />
-                Quản lý người dùng
-              </button>
-              <button 
-                onClick={handleManageFiles}
-                className="w-full bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center"
-              >
-                <FolderIcon className="h-5 w-5 mr-2" />
-                Quản lý File
-              </button>
-            </div>
-          )}
+          
         </>
       )}
     </div>
