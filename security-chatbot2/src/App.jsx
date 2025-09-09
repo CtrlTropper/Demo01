@@ -65,7 +65,7 @@ function App() {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query: text, session_id: sessionId || null, doc_id: activeDoc?.id || null })
+        body: JSON.stringify({ query: text, session_id: sessionId || null, doc_id: activeDoc?.id || null, pdf_name: activeDoc?.id ? null : (activeDoc?.pdf_name || null) })
       });
 
       if (!res.ok || !res.body) throw new Error('Network response was not ok');

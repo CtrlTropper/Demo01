@@ -32,6 +32,8 @@ def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db), user=Depe
         if doc is None:
             raise HTTPException(status_code=404, detail="Document not found")
         pdf_name = doc.pdf_name
+    elif request.pdf_name:
+        pdf_name = request.pdf_name
 
     # Generate response
     response = rag_answer(request.query, pdf_name=pdf_name)
@@ -99,6 +101,8 @@ def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db), us
                 yield f"data: Tài liệu không tồn tại.\n\n"
                 return
             pdf_name = doc.pdf_name
+        elif request.pdf_name:
+            pdf_name = request.pdf_name
         for chunk in rag_answer_stream(request.query, pdf_name=pdf_name):
             if not chunk:
                 continue
@@ -130,30 +134,98 @@ def list_documents(db: Session = Depends(get_db)):
             "id": d.id,
             "pdf_name": d.pdf_name,
             "path": d.path,
-            "embedded": is_embedded_by_pdf_name(d.pdf_name, OUTPUT_DIR)
+            "embedded": is_embedded_by_pdf_name(d.pdf_name, OUTPUT_DIR),
+            "category": "Uploads",
         })
     # Liệt kê tài liệu ban đầu trong OUTPUT_DIR/initial_docs (không nằm DB)
     initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
     if os.path.exists(initial_dir):
-        for fname in os.listdir(initial_dir):
-            if fname.lower().endswith('.pdf'):
+        for root, _, files in os.walk(initial_dir):
+            for fname in files:
+                if not fname.lower().endswith('.pdf'):
+                    continue
                 name = os.path.splitext(fname)[0]
+                rel = os.path.relpath(root, initial_dir)
+                category = rel if rel != "." else "Initial"
                 results.append({
                     "id": None,
                     "pdf_name": name,
-                    "path": os.path.join(initial_dir, fname),
-                    "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR)
+                    "path": os.path.join(root, fname),
+                    "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR),
+                    "category": category,
                 })
     return {"items": results}
 
 
 @router.get("/documents/{pdf_name}")
-def view_document(pdf_name: str):
+def view_document(pdf_name: str, category: str | None = None):
     # Ưu tiên trong uploads, sau đó initial_docs
     uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
     initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
-    for base in [uploads_dir, initial_dir]:
-        fpath = os.path.join(base, f"{pdf_name}.pdf")
-        if os.path.exists(fpath):
-            return FileResponse(fpath, media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    # Tìm trong uploads
+    fpath = os.path.join(uploads_dir, f"{pdf_name}.pdf")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    # Tìm theo category nếu cung cấp
+    if category:
+        base = os.path.join(initial_dir, category)
+        if os.path.isdir(base):
+            for root, _, files in os.walk(base):
+                for fname in files:
+                    if fname.lower() == f"{pdf_name.lower()}.pdf":
+                        return FileResponse(os.path.join(root, fname), media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    # Fallback: tìm đệ quy trong initial_docs
+    if os.path.isdir(initial_dir):
+        for root, _, files in os.walk(initial_dir):
+            for fname in files:
+                if fname.lower() == f"{pdf_name.lower()}.pdf":
+                    return FileResponse(os.path.join(root, fname), media_type='application/pdf', filename=f"{pdf_name}.pdf")
     raise HTTPException(status_code=404, detail="Document file not found")
+
+
+@router.post("/documents/{pdf_name}/embed")
+def embed_existing_document(pdf_name: str, category: str | None = None):
+    # Tìm file trong uploads hoặc initial_docs
+    uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
+    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
+    pdf_path = None
+    # Tìm trong uploads (phẳng)
+    f_up = os.path.join(uploads_dir, f"{pdf_name}.pdf")
+    if os.path.exists(f_up):
+        pdf_path = f_up
+    # Tìm theo category (nếu có)
+    if pdf_path is None and category:
+        base = os.path.join(initial_dir, category)
+        if os.path.isdir(base):
+            for root, _, files in os.walk(base):
+                for fname in files:
+                    if fname.lower() == f"{pdf_name.lower()}.pdf":
+                        pdf_path = os.path.join(root, fname)
+                        break
+                if pdf_path:
+                    break
+    # Fallback: tìm đệ quy trong initial_docs
+    if pdf_path is None and os.path.isdir(initial_dir):
+        for root, _, files in os.walk(initial_dir):
+            for fname in files:
+                if fname.lower() == f"{pdf_name.lower()}.pdf":
+                    pdf_path = os.path.join(root, fname)
+                    break
+            if pdf_path:
+                break
+    if pdf_path is None:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    # Nếu đã nhúng thì trả về luôn
+    if is_embedded_by_pdf_name(pdf_name, OUTPUT_DIR):
+        return {"message": "Already embedded", "pdf_name": pdf_name}
+
+    # Thực hiện OCR/clean/chunk/embed
+    raw_text = ocr_pdf_to_text(pdf_path, OUTPUT_DIR)
+    if not raw_text:
+        raise HTTPException(status_code=500, detail="OCR failed")
+    cleaned_text = clean_text(raw_text, pdf_path, OUTPUT_DIR)
+    chunks_local = split_text_to_chunks_vi_tokenized_with_section(cleaned_text)
+    embeddings = create_embeddings(chunks_local)
+    save_embeddings(chunks_local, embeddings, pdf_path, OUTPUT_DIR)
+    return {"message": "Embedded successfully", "pdf_name": pdf_name}
