@@ -117,8 +117,13 @@ function App() {
           sseBuffer = sseBuffer.slice(eventEndIndex + 2);
           // Một sự kiện SSE có thể gồm nhiều dòng 'data:'
           const dataLines = rawEvent.split(/\r?\n/).filter(l => l.startsWith('data:'));
-          // Giữ nguyên khoảng trắng đầu dòng để tránh dính chữ khi stream
-          const payload = dataLines.map(l => l.slice(5)).join('\n');
+          // Loại bỏ đúng 1 khoảng trắng sau 'data:' (nếu có) để tránh double-space, giữ các khoảng trắng khác
+          const payload = dataLines
+            .map(l => {
+              const after = l.slice(5);
+              return after.startsWith(' ') ? after.slice(1) : after;
+            })
+            .join('\n');
           if (!payload) continue;
           if (payload === '[DONE]') {
             // Bỏ qua, vòng while ngoài sẽ kết thúc khi reader.done = true
