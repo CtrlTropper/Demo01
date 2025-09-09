@@ -39,6 +39,12 @@ function App() {
   }, [conversations]);
 
   const createNewConversation = () => {
+    // Nếu đã có cuộc trò chuyện trống, chỉ chọn nó thay vì tạo mới
+    const existingEmpty = conversations.find(c => (c?.messages?.length || 0) === 0);
+    if (existingEmpty) {
+      setCurrentConversationId(existingEmpty.id);
+      return;
+    }
     const newId = Date.now().toString();
     const newConv = { id: newId, title: 'New Chat', messages: [] };
     setConversations([newConv, ...conversations]);
@@ -243,7 +249,7 @@ function App() {
         onRename={renameConversation}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        
+        hasEmptyChat={conversations.some(c => (c?.messages?.length || 0) === 0)}
       />
       <div className="flex-1 flex flex-col">
         <Header 

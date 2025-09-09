@@ -82,7 +82,7 @@ const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false,
         ) : (
           <button
             onClick={handleSend}
-            className={`bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft animate-glow ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-opacity-100' : ''}`}
+            className={`bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-opacity-100' : ''}`}
             disabled={disabled}
           >
             <PaperAirplaneIcon className="h-6 w-6" />

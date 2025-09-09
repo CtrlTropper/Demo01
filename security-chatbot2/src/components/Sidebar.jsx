@@ -32,13 +32,20 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
       {isOpen && (
         <>
           <div className="p-4 flex items-center border-b border-neon-cyan">
-            <button 
-              onClick={onNewChat}
-              className="flex-1 bg-primary-blue text-white px-4 py-2 rounded-lg hover:bg-opacity-80 transition shadow-soft flex items-center justify-center"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              New Chat
-            </button>
+            {(() => {
+              const hasEmpty = conversations.some(c => (c?.messages?.length || 0) === 0);
+              return (
+                <button 
+                  onClick={onNewChat}
+                  className={`flex-1 text-white px-4 py-2 rounded-lg transition shadow-soft flex items-center justify-center ${hasEmpty ? 'bg-orange/60 cursor-not-allowed' : 'bg-orange hover:bg-opacity-80'}`}
+                  disabled={hasEmpty}
+                  title={hasEmpty ? 'Đã có cuộc trò chuyện trống' : 'Tạo cuộc trò chuyện mới'}
+                >
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  New Chat
+                </button>
+              );
+            })()}
           </div>
           <div className="p-4">
             <div className="relative">
