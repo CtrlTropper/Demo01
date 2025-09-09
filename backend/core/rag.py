@@ -19,9 +19,11 @@ EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding
 LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/vinallama-2.7b-chat")
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", os.path.join(DEFAULT_DATA_DIR, "all_faiss.index"))
 EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", os.path.join(DEFAULT_DATA_DIR, "all_embeddings.pkl"))
+# Đồng bộ với embedding.py: cho phép chỉ định OUTPUT_DIR
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", DEFAULT_DATA_DIR)
 
 # Cấu hình sinh
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
 
 # Biến toàn cục để khởi tạo lười
 embedding_model = None
@@ -86,9 +88,11 @@ def _trim_chunk_tokens(chunk: str, max_tokens_per_chunk: int) -> str:
 
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
     query = sanitize_input(query)
+    # Cải thiện cho e5: thêm tiền tố 'query: '
+    query_for_embedding = f"query: {query}" if "e5" in EMBEDDING_MODEL_PATH.lower() else query
     # Nếu chỉ định tài liệu, ưu tiên dùng index và chunks theo tài liệu đó
     if pdf_name:
-        doc_dir = os.path.join(DEFAULT_DATA_DIR, pdf_name)
+        doc_dir = os.path.join(OUTPUT_DIR, pdf_name)
         index_path = os.path.join(doc_dir, f"{pdf_name}_faiss.index")
         pickle_path = os.path.join(doc_dir, f"{pdf_name}_embeddings.pkl")
         if os.path.exists(index_path) and os.path.exists(pickle_path):
@@ -98,7 +102,7 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str 
             local_chunks = local_data.get("chunks", [])
             if len(local_chunks) == 0:
                 return []
-            query_vector = embedding_model.encode([query])
+            query_vector = embedding_model.encode([query_for_embedding])
             D, I = local_index.search(np.array(query_vector).astype("float32"), top_k)
             context_chunks = []
             for i in I[0]:
@@ -110,7 +114,7 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str 
     # Ngược lại, dùng index toàn cục
     if faiss_index is None or len(chunks) == 0:
         return []
-    query_vector = embedding_model.encode([query])
+    query_vector = embedding_model.encode([query_for_embedding])
     D, I = faiss_index.search(np.array(query_vector).astype("float32"), top_k)
     context_chunks = []
     for i in I[0]:
@@ -122,17 +126,17 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str 
 def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
-    <|im_start|>system
-    Bạn là một trợ lý AI an toàn thông tin. Luôn trả lời bằng tiếng Việt, kể cả khi tài liệu hoặc câu hỏi là tiếng Anh. Chỉ trả lời người dùng dựa trên thông tin được cung cấp dưới đây; nếu không biết, hãy trả lời: "Tôi không có thông tin về câu hỏi này." Không được bịa.
-    <|im_end|>
-    <|im_start|>user
-    Thông tin:
-    {context}
+<|im_start|>system
+Bạn là trợ lý AI lĩnh vực an toàn thông tin, trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời đúng một câu: "Tôi không có thông tin về câu hỏi này." Không lặp lại câu hỏi. Không nhắc lại 'Thông tin'.
+<|im_end|>
+<|im_start|>user
+Thông tin:
+{context}
 
-    Câu hỏi: {question}
-    <|im_end|>
-    <|im_start|>assistant
-    """.strip()
+Câu hỏi: {question}
+<|im_end|>
+<|im_start|>assistant
+""".strip()
 
 def generate_answer(prompt):
     encoding = tokenizer(prompt, return_tensors="pt").to(model.device)
@@ -140,17 +144,30 @@ def generate_answer(prompt):
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
         max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.7,
-        do_sample=True
+        temperature=0.2,
+        do_sample=False,
+        repetition_penalty=1.15,
+        no_repeat_ngram_size=4,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.eos_token_id,
     )
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Chỉ lấy phần sau thẻ assistant để tránh echo prompt
+    if "<|im_start|>assistant" in full_text:
+        return full_text.split("<|im_start|>assistant", 1)[1].strip()
+    # Fallback: cắt bỏ phần prompt đầu vào
+    prompt_len = len(tokenizer.decode(encoding.input_ids[0], skip_special_tokens=True))
+    return full_text[prompt_len:].strip()
 
 def rag_answer(query, top_k=3, pdf_name: str | None = None):
     ensure_initialized()
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    # Nếu không có ngữ cảnh, trả lời chuẩn
+    if not context_chunks:
+        return "Tôi không có thông tin về câu hỏi này."
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
-    return answer.split("<|im_start|>assistant")[-1].strip()
+    return answer.strip()
 
 
 def generate_answer_stream(prompt):
@@ -163,20 +180,37 @@ def generate_answer_stream(prompt):
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
         max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.7,
-        do_sample=True,
+        temperature=0.2,
+        do_sample=False,
+        repetition_penalty=1.15,
+        no_repeat_ngram_size=4,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.eos_token_id,
         streamer=streamer,
     )
 
     thread = Thread(target=model.generate, kwargs=generate_kwargs)
     thread.start()
 
+    # Bỏ phần prompt nếu model vẫn stream lại đầu vào
+    yielded_any = False
     for new_text in streamer:
-        yield new_text
+        if not yielded_any:
+            # Cắt tiền tố nếu nó khớp với một phần của prompt
+            if new_text.strip().startswith("<|im_start|>assistant"):
+                new_text = new_text.split("<|im_start|>assistant", 1)[1]
+            yielded_any = True if new_text else yielded_any
+        if new_text:
+            yield new_text
 
 
 def rag_answer_stream(query, top_k=3, pdf_name: str | None = None):
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    if not context_chunks:
+        # Stream câu trả lời mặc định ngắn
+        def _gen():
+            yield "Tôi không có thông tin về câu hỏi này."
+        return _gen()
     prompt = build_prompt(context_chunks, query)
     return generate_answer_stream(prompt)
 
