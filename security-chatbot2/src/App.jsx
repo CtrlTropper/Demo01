@@ -238,7 +238,7 @@ function App() {
   // Không còn đăng xuất
 
   return (
-    <div className="h-screen flex bg-dark-slate max-w-6xl mx-auto w-full">
+    <div className="h-screen w-screen flex bg-dark-slate">
       <Sidebar 
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
