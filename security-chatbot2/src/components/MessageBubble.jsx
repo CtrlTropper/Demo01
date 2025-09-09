@@ -21,9 +21,9 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
       )}
       <div className="flex flex-col items-start">
         <div
-          className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap break-words relative ${
+          className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap break-words relative max-w-[80%] px-4 py-3 rounded-2xl ${
             isUser
-              ? 'bg-message-gradient text-white'
+              ? 'bg-primary-blue text-white'
               : 'glass-effect text-white'
           }`}
         >
