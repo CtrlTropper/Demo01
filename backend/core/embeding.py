@@ -51,7 +51,7 @@ def ocr_pdf_to_text(pdf_path, output_dir):
     print(f"📖 Đang OCR file: {pdf_path}")
     doc = fitz.open(pdf_path)
     full_text = ""
-    ocr_config = r'--oem 3 --psm 6 -l vie'
+    ocr_config = r'--oem 3 --psm 6 -l vie+eng'
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
         pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))

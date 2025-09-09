@@ -123,7 +123,7 @@ def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
     <|im_start|>system
-    Bạn là một trợ lý AI an toàn thông tin. Chỉ trả lời người dùng dựa trên thông tin được cung cấp dưới đây. Nếu không biết, hãy trả lời: "Tôi không có thông tin về câu hỏi này." Không được bịa.
+    Bạn là một trợ lý AI an toàn thông tin. Luôn trả lời bằng tiếng Việt, kể cả khi tài liệu hoặc câu hỏi là tiếng Anh. Chỉ trả lời người dùng dựa trên thông tin được cung cấp dưới đây; nếu không biết, hãy trả lời: "Tôi không có thông tin về câu hỏi này." Không được bịa.
     <|im_end|>
     <|im_start|>user
     Thông tin:
