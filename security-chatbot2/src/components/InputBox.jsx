@@ -14,13 +14,18 @@ const InputBox = ({ onSendMessage, disabled = false }) => {
 
   return (
     <div className="bg-dark-slate p-4 flex items-center shadow-md">
-      <input
-        type="text"
+      <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Nhập câu hỏi..."
-        className={`flex-1 p-3 rounded-l-xl bg-dark-slate text-white placeholder-gray-400 border-none focus:outline-none focus:ring-2 focus:ring-neon-cyan transition glass-effect ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        placeholder="Nhập câu hỏi... (Shift+Enter để xuống dòng)"
+        className={`flex-1 p-3 rounded-l-xl bg-dark-slate text-white placeholder-gray-400 border-none focus:outline-none focus:ring-2 focus:ring-neon-cyan transition glass-effect resize-none ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+        rows={1}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
         disabled={disabled}
       />
       <button
