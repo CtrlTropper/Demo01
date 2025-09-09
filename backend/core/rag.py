@@ -86,6 +86,41 @@ def _trim_chunk_tokens(chunk: str, max_tokens_per_chunk: int) -> str:
     return chunk
 
 
+# --- Làm sạch ngữ cảnh và output ---
+_RE_MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)|!\[\](?:\([^)]*\))?|!\[\]!")
+_RE_MULTI_PUNCT = re.compile(r"([.,;:!?]){2,}")
+_RE_SPACES = re.compile(r"[ \t]+")
+_RE_EMPTY_BRACKETS = re.compile(r"\[\s*\]")
+
+def sanitize_context_chunk(text: str) -> str:
+    if not text:
+        return ""
+    text = _RE_MD_IMAGE.sub("", text)
+    text = _RE_EMPTY_BRACKETS.sub("", text)
+    text = text.replace("\u200b", "")
+    text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+    text = _RE_SPACES.sub(" ", text)
+    return text.strip()
+
+def sanitize_model_output(text: str) -> str:
+    if not text:
+        return ""
+    # Loại markdown ảnh, ký tự rác, meta Q/A
+    text = _RE_MD_IMAGE.sub("", text)
+    text = text.replace("Câu hỏi:", "").replace("Trả lời:", "")
+    text = text.replace("Q:", "").replace("A:", "")
+    text = text.replace("Truy string:", "")
+    text = _RE_EMPTY_BRACKETS.sub("", text)
+    text = text.replace("\u200b", "")
+    # Thu gọn chuỗi dấu câu lặp
+    text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
+    # Thu gọn khoảng trắng
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+    text = _RE_SPACES.sub(" ", text)
+    return text.strip()
+
+
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
     query = sanitize_input(query)
     # Cải thiện cho e5: thêm tiền tố 'query: '
@@ -107,7 +142,9 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str 
             context_chunks = []
             for i in I[0]:
                 if i < len(local_chunks):
-                    chunk = _trim_chunk_tokens(local_chunks[i], max_tokens_per_chunk)
+                    raw_chunk = local_chunks[i]
+                    raw_chunk = sanitize_context_chunk(raw_chunk)
+                    chunk = _trim_chunk_tokens(raw_chunk, max_tokens_per_chunk)
                     context_chunks.append(chunk.strip())
             return context_chunks
 
@@ -119,7 +156,9 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str 
     context_chunks = []
     for i in I[0]:
         if i < len(chunks):
-            chunk = _trim_chunk_tokens(chunks[i], max_tokens_per_chunk)
+            raw_chunk = chunks[i]
+            raw_chunk = sanitize_context_chunk(raw_chunk)
+            chunk = _trim_chunk_tokens(raw_chunk, max_tokens_per_chunk)
             context_chunks.append(chunk.strip())
     return context_chunks
 
@@ -127,7 +166,7 @@ def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
 <|im_start|>system
-Bạn là trợ lý AI lĩnh vực an toàn thông tin, trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời đúng một câu: "Tôi không có thông tin về câu hỏi này." Không lặp lại câu hỏi. Không nhắc lại 'Thông tin'.
+Bạn là trợ lý AI lĩnh vực an toàn thông tin, trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời đúng một câu: "Tôi không có thông tin về câu hỏi này." Không lặp lại câu hỏi. Không nhắc lại 'Thông tin'. Không thêm các tiền tố như "Câu hỏi:", "Trả lời:", "Q:", "A:". Không chèn markdown ảnh/đường dẫn hay ký tự lạ.
 <|im_end|>
 <|im_start|>user
 Thông tin:
@@ -167,6 +206,7 @@ def rag_answer(query, top_k=3, pdf_name: str | None = None):
         return "Tôi không có thông tin về câu hỏi này."
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
+    answer = sanitize_model_output(answer)
     return answer.strip()
 
 
@@ -192,16 +232,25 @@ def generate_answer_stream(prompt):
     thread = Thread(target=model.generate, kwargs=generate_kwargs)
     thread.start()
 
-    # Bỏ phần prompt nếu model vẫn stream lại đầu vào
-    yielded_any = False
+    # Làm sạch theo kiểu tích lũy để tránh rác theo thời gian thực
+    raw_accum = ""
+    clean_accum = ""
+    started = False
     for new_text in streamer:
-        if not yielded_any:
-            # Cắt tiền tố nếu nó khớp với một phần của prompt
+        if not new_text:
+            continue
+        if not started:
             if new_text.strip().startswith("<|im_start|>assistant"):
                 new_text = new_text.split("<|im_start|>assistant", 1)[1]
-            yielded_any = True if new_text else yielded_any
-        if new_text:
-            yield new_text
+            started = True
+        raw_accum += new_text
+        cleaned = sanitize_model_output(raw_accum)
+        # Chỉ phát phần mới sau khi làm sạch
+        if len(cleaned) > len(clean_accum):
+            delta = cleaned[len(clean_accum):]
+            clean_accum = cleaned
+            if delta:
+                yield delta
 
 
 def rag_answer_stream(query, top_k=3, pdf_name: str | None = None):
