@@ -147,6 +147,13 @@ def save_embeddings(chunks, embeddings, pdf_path, output_dir):
         pickle.dump(all_data, f)
     return pickle_path, index_path
 
+
+def is_embedded_by_pdf_name(pdf_name: str, output_dir: str = OUTPUT_DIR) -> bool:
+    """Kiểm tra đã có embedding cho một tài liệu theo tên PDF (không đuôi)."""
+    per_doc_pkl = os.path.join(output_dir, pdf_name, f"{pdf_name}_embeddings.pkl")
+    per_doc_index = os.path.join(output_dir, pdf_name, f"{pdf_name}_faiss.index")
+    return os.path.exists(per_doc_pkl) and os.path.exists(per_doc_index)
+
 # Test độc lập (comment nếu tích hợp)
 if __name__ == "__main__":
     pdf_path = "D:/Vian/Step1_Data_Prepare/documents/pdf/qd-ban-hanh-va-phuong-an-kich-ban-ung-cu-su-co-he-thong-thong-tin-2023.signed638415142917550402.pdf"  # Thay bằng path thực

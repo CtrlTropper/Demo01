@@ -5,6 +5,7 @@ import InputBox from './components/InputBox';
 import Sidebar from './components/Sidebar';
 import UserModal from './components/UserModal';
 import LoginModal from './components/LoginModal';
+import DocumentManagerModal from './components/DocumentManagerModal';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -17,6 +18,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isDocsOpen, setIsDocsOpen] = useState(false);
 
   const user = {
     name: 'John Doe',
@@ -231,6 +233,7 @@ function App() {
           isLoggedIn={isLoggedIn}
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
           onOpenUserModal={() => setIsUserModalOpen(true)}
+          onOpenDocs={() => setIsDocsOpen(true)}
         />
         <ChatWindow messages={currentMessages} isLoading={isLoading} />
         <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} />
@@ -245,6 +248,16 @@ function App() {
           const savedRole = localStorage.getItem('auth:role') || 'user';
           setRole(savedRole);
         }} />
+      )}
+      {isDocsOpen && (
+        <DocumentManagerModal
+          onClose={() => setIsDocsOpen(false)}
+          activeDoc={activeDoc}
+          onSelect={(doc) => {
+            setActiveDoc(doc);
+            setIsDocsOpen(false);
+          }}
+        />
       )}
     </div>
   );

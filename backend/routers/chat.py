@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..schemas.chat import ChatRequest, ChatResponse
 from ..db.database import get_db
@@ -10,6 +11,7 @@ from ..core.embeding import (
     create_embeddings,
     save_embeddings,
     OUTPUT_DIR,
+    is_embedded_by_pdf_name,
 )
 from ..core.rag import rag_answer, rag_answer_stream  # Từ core
 import uuid
@@ -117,3 +119,41 @@ def chat_stream_endpoint(request: ChatRequest, db: Session = Depends(get_db), us
     }
     response = StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
     return response
+
+
+@router.get("/documents")
+def list_documents(db: Session = Depends(get_db)):
+    docs = db.query(Document).order_by(Document.created_at.desc()).all()
+    results = []
+    for d in docs:
+        results.append({
+            "id": d.id,
+            "pdf_name": d.pdf_name,
+            "path": d.path,
+            "embedded": is_embedded_by_pdf_name(d.pdf_name, OUTPUT_DIR)
+        })
+    # Liệt kê tài liệu ban đầu trong OUTPUT_DIR/initial_docs (không nằm DB)
+    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
+    if os.path.exists(initial_dir):
+        for fname in os.listdir(initial_dir):
+            if fname.lower().endswith('.pdf'):
+                name = os.path.splitext(fname)[0]
+                results.append({
+                    "id": None,
+                    "pdf_name": name,
+                    "path": os.path.join(initial_dir, fname),
+                    "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR)
+                })
+    return {"items": results}
+
+
+@router.get("/documents/{pdf_name}")
+def view_document(pdf_name: str):
+    # Ưu tiên trong uploads, sau đó initial_docs
+    uploads_dir = os.path.join(OUTPUT_DIR, "uploads")
+    initial_dir = os.path.join(OUTPUT_DIR, "initial_docs")
+    for base in [uploads_dir, initial_dir]:
+        fpath = os.path.join(base, f"{pdf_name}.pdf")
+        if os.path.exists(fpath):
+            return FileResponse(fpath, media_type='application/pdf', filename=f"{pdf_name}.pdf")
+    raise HTTPException(status_code=404, detail="Document file not found")
