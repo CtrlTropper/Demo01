@@ -117,7 +117,8 @@ function App() {
           sseBuffer = sseBuffer.slice(eventEndIndex + 2);
           // Một sự kiện SSE có thể gồm nhiều dòng 'data:'
           const dataLines = rawEvent.split(/\r?\n/).filter(l => l.startsWith('data:'));
-          const payload = dataLines.map(l => l.slice(5).trimStart()).join('\n');
+          // Giữ nguyên khoảng trắng đầu dòng để tránh dính chữ khi stream
+          const payload = dataLines.map(l => l.slice(5)).join('\n');
           if (!payload) continue;
           if (payload === '[DONE]') {
             // Bỏ qua, vòng while ngoài sẽ kết thúc khi reader.done = true
@@ -237,7 +238,7 @@ function App() {
   // Không còn đăng xuất
 
   return (
-    <div className="h-screen flex bg-dark-slate">
+    <div className="h-screen flex bg-dark-slate max-w-6xl mx-auto w-full">
       <Sidebar 
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}

@@ -18,7 +18,7 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
         <CpuChipIcon className="h-8 w-8 text-matrix-green mr-2 flex-shrink-0" />
       )}
       <div
-        className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap relative ${
+        className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap break-words relative ${
           isUser
             ? 'bg-message-gradient text-white'
             : 'glass-effect text-white'
