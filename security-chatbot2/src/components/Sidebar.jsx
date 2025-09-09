@@ -37,7 +37,7 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
               return (
                 <button 
                   onClick={onNewChat}
-                  className={`flex-1 text-white px-4 py-2 rounded-lg transition shadow-soft flex items-center justify-center ${hasEmpty ? 'bg-orange/60 cursor-not-allowed' : 'bg-orange hover:bg-opacity-80'}`}
+                  className={`flex-1 text-white px-4 py-2 rounded-lg transition shadow-soft flex items-center justify-center ${hasEmpty ? 'bg-primary-blue/50 cursor-not-allowed' : 'bg-primary-blue hover:bg-primary-blue/90'}`}
                   disabled={hasEmpty}
                   title={hasEmpty ? 'Đã có cuộc trò chuyện trống' : 'Tạo cuộc trò chuyện mới'}
                 >
@@ -63,8 +63,10 @@ const Sidebar = ({ isOpen, onToggle, conversations, currentId, onSelect, onNewCh
             {conversations.map((conv) => (
               <div
                 key={conv.id}
-                className={`p-3 mb-2 rounded-lg cursor-pointer hover:bg-purple transition flex items-center justify-between ${
-                  conv.id === currentId ? 'bg-orange' : 'bg-transparent'
+                className={`p-3 mb-2 rounded-lg cursor-pointer transition flex items-center justify-between ${
+                  conv.id === currentId
+                    ? 'bg-gray-800 border border-neon-cyan'
+                    : 'bg-transparent hover:bg-gray-700'
                 }`}
               >
                 {editingId === conv.id ? (
