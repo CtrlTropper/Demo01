@@ -86,7 +86,7 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-dark-slate rounded-lg shadow-xl w-full max-w-3xl p-4">
+      <div className="bg-dark-slate rounded-lg shadow-xl w-full max-w-2xl p-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl text-white font-semibold">Quản lý tài liệu</h2>
           <button className="text-gray-300 hover:text-white" onClick={onClose}>✕</button>
@@ -102,8 +102,12 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
         {loading ? (
           <div className="text-gray-300">Đang tải...</div>
         ) : (
-          <div className="max-h-[60vh] overflow-y-auto">
-            <table className="w-full text-left text-sm">
+          <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden">
+            <table className="w-full text-left text-sm table-fixed">
+              <colgroup>
+                <col style={{ width: '65%' }} />
+                <col style={{ width: '35%' }} />
+              </colgroup>
               <thead className="sticky top-0 bg-gray-800 text-gray-300">
                 <tr>
                   <th className="px-3 py-2 font-medium">Tên tài liệu</th>
@@ -114,11 +118,11 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc }) => {
                 {items.filter(it => it.pdf_name.toLowerCase().includes(q.toLowerCase())).map((it, idx) => (
                   <tr key={`${it.pdf_name}-${it.category || 'NA'}-${idx}`}>
                     <td className="px-3 py-3 align-top">
-                      <div className="text-white font-medium">{it.pdf_name}</div>
+                      <div className="text-white font-medium truncate" title={it.pdf_name}>{it.pdf_name}</div>
                       <div className="text-xs text-gray-400">{it.embedded ? 'Đã nhúng' : 'Chưa nhúng'} · Nguồn: {it.category || 'Initial'}</div>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <a
                           className="px-3 py-1 rounded bg-gray-700 text-white hover:bg-opacity-80"
                           href={buildViewHref(it)}
