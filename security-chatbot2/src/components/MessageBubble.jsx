@@ -1,14 +1,24 @@
-import { UserIcon, CpuChipIcon } from '@heroicons/react/24/solid';
+import { UserIcon, CpuChipIcon, ClipboardIcon, CheckIcon } from '@heroicons/react/24/solid';
+import { useState } from 'react';
 
 const MessageBubble = ({ sender, text, streaming = false }) => {
   const isUser = sender === 'user';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
   return (
     <div className={`flex items-start ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       {!isUser && (
         <CpuChipIcon className="h-8 w-8 text-matrix-green mr-2 flex-shrink-0" />
       )}
       <div
-        className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap ${
+        className={`message-bubble shadow-soft transition-opacity duration-500 opacity-0 animate-slide-up whitespace-pre-wrap relative ${
           isUser
             ? 'bg-message-gradient text-white'
             : 'glass-effect text-white'
@@ -25,7 +35,15 @@ const MessageBubble = ({ sender, text, streaming = false }) => {
           </span>
         ) : null)}
         {!streaming && !isUser && text && (
-          <span className="ml-2 text-xs text-gray-300 align-baseline">• đã xong</span>
+          <div className="absolute -top-3 -right-3 flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className="bg-gray-700/80 hover:bg-gray-700 text-white p-1 rounded shadow-soft"
+              title="Sao chép"
+            >
+              {copied ? <CheckIcon className="h-4 w-4 text-matrix-green" /> : <ClipboardIcon className="h-4 w-4" />}
+            </button>
+          </div>
         )}
       </div>
       {isUser && (

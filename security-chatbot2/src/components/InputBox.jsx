@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
-import { PaperAirplaneIcon, ArrowUpTrayIcon } from '@heroicons/react/24/solid';
+import { useEffect, useRef, useState } from 'react';
+import { PaperAirplaneIcon, ArrowUpTrayIcon, StopIcon } from '@heroicons/react/24/solid';
 
-const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false }) => {
+const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false, onStop }) => {
   const [input, setInput] = useState('');
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const handleSend = () => {
     if (disabled) return;
@@ -12,6 +13,12 @@ const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false 
       setInput('');
     }
   };
+
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+  }, [input]);
 
   const handleChooseFile = () => {
     if (disabled) return;
@@ -49,6 +56,7 @@ const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false 
           onChange={handleFileChange}
         />
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Nhập câu hỏi... (Shift+Enter để xuống dòng)"
@@ -63,13 +71,23 @@ const InputBox = ({ onSendMessage, onUploadPdf, activeDocName, disabled = false 
           }}
           disabled={disabled}
         />
-        <button
-          onClick={handleSend}
-          className={`bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft animate-glow ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-opacity-100' : ''}`}
-          disabled={disabled}
-        >
-          <PaperAirplaneIcon className="h-6 w-6" />
-        </button>
+        {disabled ? (
+          <button
+            onClick={onStop}
+            className={`bg-warning-yellow text-black p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft ${disabled ? '' : 'opacity-60 cursor-not-allowed'}`}
+            title="Dừng sinh"
+          >
+            <StopIcon className="h-6 w-6" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            className={`bg-primary-blue text-white p-3 rounded-r-xl hover:bg-opacity-80 transition shadow-soft animate-glow ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-opacity-100' : ''}`}
+            disabled={disabled}
+          >
+            <PaperAirplaneIcon className="h-6 w-6" />
+          </button>
+        )}
       </div>
       {activeDocName ? (
         <div className="mt-2 text-xs text-gray-400">Đang tập trung vào: {activeDocName}</div>

@@ -11,6 +11,7 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeDoc, setActiveDoc] = useState(null); // { id, pdf_name }
+  const [abortController, setAbortController] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   // Không dùng modal người dùng/đăng nhập
@@ -62,10 +63,13 @@ function App() {
     try {
       // Dùng SSE stream
       const headers = { 'Content-Type': 'application/json' };
+      const controller = new AbortController();
+      setAbortController(controller);
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query: text, session_id: sessionId || null, doc_id: activeDoc?.id || null, pdf_name: activeDoc?.id ? null : (activeDoc?.pdf_name || null) })
+        body: JSON.stringify({ query: text, session_id: sessionId || null, doc_id: activeDoc?.id || null, pdf_name: activeDoc?.id ? null : (activeDoc?.pdf_name || null) }),
+        signal: controller.signal
       });
 
       if (!res.ok || !res.body) throw new Error('Network response was not ok');
@@ -128,14 +132,23 @@ function App() {
 
       // Nếu đã đăng nhập: cập nhật local cache từ server có thể thực hiện here (tối giản: để lần tải lịch sử sau)
     } catch (err) {
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === currentConversationId) {
-          return { ...conv, messages: [...conv.messages, { sender: 'bot', text: 'Có lỗi khi gọi API.' }] };
-        }
-        return conv;
-      }));
+      if (err?.name !== 'AbortError') {
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === currentConversationId) {
+            return { ...conv, messages: [...conv.messages, { sender: 'bot', text: 'Có lỗi khi gọi API.' }] };
+          }
+          return conv;
+        }));
+      }
     } finally {
       setIsLoading(false);
+      setAbortController(null);
+    }
+  };
+
+  const handleStop = () => {
+    if (abortController) {
+      try { abortController.abort(); } catch (e) {}
     }
   };
 
@@ -210,11 +223,11 @@ function App() {
       />
       <div className="flex-1 flex flex-col">
         <Header 
-          
           onOpenDocs={() => setIsDocsOpen(true)}
+          activeDocName={activeDoc?.pdf_name}
         />
         <ChatWindow messages={currentMessages} isLoading={isLoading} />
-        <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} />
+        <InputBox onSendMessage={handleSendMessage} onUploadPdf={handleUploadPdf} activeDocName={activeDoc?.pdf_name} disabled={isLoading} onStop={handleStop} />
       </div>
       
       {isDocsOpen && (
