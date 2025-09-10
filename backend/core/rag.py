@@ -157,6 +157,56 @@ def detect_repetition(text: str) -> bool:
     
     return False
 
+def is_context_relevant(query: str, context_chunks: list) -> bool:
+    """Kiểm tra độ liên quan của ngữ cảnh với câu hỏi"""
+    if not context_chunks:
+        return False
+    
+    query_lower = query.lower()
+    query_words = set(query_lower.split())
+    
+    # Loại bỏ stop words
+    stop_words = {'là', 'gì', 'của', 'và', 'trong', 'với', 'cho', 'từ', 'đến', 'theo', 'về', 'các', 'một', 'những', 'được', 'có', 'không', 'này', 'đó', 'đây'}
+    query_words = query_words - stop_words
+    
+    if not query_words:
+        return True  # Nếu không có từ khóa quan trọng, chấp nhận
+    
+    # Kiểm tra ít nhất 1 chunk có chứa từ khóa quan trọng
+    for chunk in context_chunks:
+        chunk_lower = chunk.lower()
+        chunk_words = set(chunk_lower.split())
+        
+        # Kiểm tra overlap từ khóa
+        overlap = query_words.intersection(chunk_words)
+        if len(overlap) >= max(1, len(query_words) * 0.3):  # Ít nhất 30% từ khóa
+            return True
+    
+    return False
+
+def is_answer_relevant(query: str, answer: str) -> bool:
+    """Kiểm tra độ liên quan của câu trả lời với câu hỏi"""
+    if not answer or len(answer) < 10:
+        return False
+    
+    # Kiểm tra các từ khóa không liên quan
+    irrelevant_keywords = [
+        'trump', 'ukraine', 'pelican', 'chim bồ nông', 'bay lượn', 
+        'thức ăn', 'g7', 'hội nghị thượng đỉnh', 'tổng thống donald',
+        'sovereignty', 'independence', 'interference'
+    ]
+    
+    answer_lower = answer.lower()
+    for keyword in irrelevant_keywords:
+        if keyword in answer_lower:
+            return False
+    
+    # Kiểm tra độ dài hợp lý (không quá dài)
+    if len(answer) > 1000:
+        return False
+    
+    return True
+
 
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
     query = sanitize_input(query)
@@ -203,15 +253,19 @@ def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
 <|im_start|>system
-Bạn là trợ lý AI lĩnh vực an toàn thông tin. Trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời: "Tôi không có thông tin về câu hỏi này." 
+Bạn là trợ lý AI lĩnh vực an toàn thông tin. Trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. 
 
-QUAN TRỌNG: 
+QUY TẮC NGHIÊM NGẶT:
+- CHỈ dùng thông tin trong phần 'Thông tin' bên dưới
+- KHÔNG được bịa đặt, thêm thông tin không có trong tài liệu
+- Nếu thông tin không liên quan đến câu hỏi, trả lời: "Tôi không có thông tin về câu hỏi này."
 - Không lặp lại câu hỏi
 - Không nhắc lại 'Thông tin' 
 - Không thêm tiền tố "Câu hỏi:", "Trả lời:", "Q:", "A:"
 - Không chèn markdown ảnh, đường dẫn, ký tự lạ
 - Không lặp lại nội dung đã viết
 - Dừng ngay khi trả lời xong
+- KHÔNG được nói về Trump, Ukraine, chim bồ nông, hay bất kỳ chủ đề nào không liên quan
 <|im_end|>
 <|im_start|>user
 Thông tin:
@@ -261,12 +315,34 @@ def generate_answer(prompt):
 def rag_answer(query, top_k=3, pdf_name: str | None = None):
     ensure_initialized()
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    
+    # Debug: In ra thông tin để kiểm tra
+    print(f"DEBUG - Query: {query}")
+    print(f"DEBUG - PDF name: {pdf_name}")
+    print(f"DEBUG - Found {len(context_chunks)} context chunks")
+    for i, chunk in enumerate(context_chunks):
+        print(f"DEBUG - Chunk {i+1}: {chunk[:100]}...")
+    
     # Nếu không có ngữ cảnh, trả lời chuẩn
     if not context_chunks:
+        print("DEBUG - No context found, returning default message")
         return "Tôi không có thông tin về câu hỏi này."
+    
+    # Kiểm tra độ liên quan của ngữ cảnh
+    if not is_context_relevant(query, context_chunks):
+        print("DEBUG - Context not relevant, returning default message")
+        return "Tôi không có thông tin về câu hỏi này."
+    
     prompt = build_prompt(context_chunks, query)
+    print(f"DEBUG - Prompt length: {len(prompt)}")
     answer = generate_answer(prompt)
     answer = sanitize_model_output(answer)
+    
+    # Kiểm tra độ liên quan của câu trả lời
+    if not is_answer_relevant(query, answer):
+        print("DEBUG - Answer not relevant, returning default message")
+        return "Tôi không có thông tin về câu hỏi này."
+    
     return answer.strip()
 
 
@@ -338,12 +414,27 @@ def generate_answer_stream(prompt):
 
 def rag_answer_stream(query, top_k=3, pdf_name: str | None = None):
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    
+    # Debug: In ra thông tin để kiểm tra
+    print(f"DEBUG STREAM - Query: {query}")
+    print(f"DEBUG STREAM - PDF name: {pdf_name}")
+    print(f"DEBUG STREAM - Found {len(context_chunks)} context chunks")
+    
     if not context_chunks:
-        # Stream câu trả lời mặc định ngắn
+        print("DEBUG STREAM - No context found, returning default message")
         def _gen():
             yield "Tôi không có thông tin về câu hỏi này."
         return _gen()
+    
+    # Kiểm tra độ liên quan của ngữ cảnh
+    if not is_context_relevant(query, context_chunks):
+        print("DEBUG STREAM - Context not relevant, returning default message")
+        def _gen():
+            yield "Tôi không có thông tin về câu hỏi này."
+        return _gen()
+    
     prompt = build_prompt(context_chunks, query)
+    print(f"DEBUG STREAM - Prompt length: {len(prompt)}")
     return generate_answer_stream(prompt)
 
 # Test độc lập (comment nếu tích hợp)
