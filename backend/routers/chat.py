@@ -59,9 +59,9 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if existing:
         return {"message": "PDF already embedded", "doc_id": existing.id, "pdf_name": pdf_name}
 
-    # Lưu file tạm vào backend/data/upload để xử lý OCR/Embedding
+    # Lưu file tạm vào backend/data/uploads để xử lý OCR/Embedding
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    uploads_dir = os.path.join(backend_dir, "data", "upload")
+    uploads_dir = os.path.join(backend_dir, "data", "uploads")
     os.makedirs(uploads_dir, exist_ok=True)
     saved_pdf_path = os.path.join(uploads_dir, f"{pdf_name}.pdf")
     with open(saved_pdf_path, "wb") as f:
@@ -165,10 +165,10 @@ def list_documents(db: Session = Depends(get_db)):
                         "category": category,
                     })
                     seen.add(key)
-    # Thêm các file upload trong backend/data/upload (chưa qua DB)
-    upload_dir = os.path.join(backend_dir, "data", "upload")
-    if os.path.exists(upload_dir):
-        for fname in os.listdir(upload_dir):
+    # Thêm các file upload trong backend/data/uploads (chưa qua DB)
+    uploads_dir = os.path.join(backend_dir, "data", "uploads")
+    if os.path.exists(uploads_dir):
+        for fname in os.listdir(uploads_dir):
             if not fname.lower().endswith('.pdf'):
                 continue
             name = os.path.splitext(fname)[0]
@@ -176,7 +176,7 @@ def list_documents(db: Session = Depends(get_db)):
                 results.append({
                     "id": None,
                     "pdf_name": name,
-                    "path": os.path.join(upload_dir, fname),
+                    "path": os.path.join(uploads_dir, fname),
                     "embedded": is_embedded_by_pdf_name(name, OUTPUT_DIR),
                     "category": "Uploads",
                 })

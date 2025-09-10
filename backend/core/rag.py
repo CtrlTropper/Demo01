@@ -23,11 +23,12 @@ tokenizer = None
 model = None
 faiss_index = None
 chunks = []
+chunk_metadata = []  # Lưu metadata cho mỗi chunk (pdf_name, index)
 _initialized = False
 
 
 def ensure_initialized() -> None:
-    global embedding_model, tokenizer, model, faiss_index, chunks, _initialized
+    global embedding_model, tokenizer, model, faiss_index, chunks, chunk_metadata, _initialized
     if _initialized:
         return
 
@@ -58,11 +59,21 @@ def ensure_initialized() -> None:
         with open(EMBEDDINGS_PICKLE_PATH, "rb") as f:
             data = pickle.load(f)
         chunks = []
+        chunk_metadata = []
         for item in data:
-            chunks.extend(item.get("chunks", []))
+            pdf_name = item.get("pdf_name", "unknown")
+            item_chunks = item.get("chunks", [])
+            chunks.extend(item_chunks)
+            # Lưu metadata cho mỗi chunk
+            for i in range(len(item_chunks)):
+                chunk_metadata.append({
+                    "pdf_name": pdf_name,
+                    "chunk_index": i
+                })
     else:
         faiss_index = None
         chunks = []
+        chunk_metadata = []
 
     _initialized = True
 
@@ -70,7 +81,7 @@ def sanitize_input(text: str) -> str:
     text = re.sub(r'[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r]', '', text)
     return text.strip()
 
-def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512):
+def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name=None):
     query = sanitize_input(query)
     if faiss_index is None or len(chunks) == 0:
         return []
@@ -80,6 +91,11 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512):
     for i in I[0]:
         if i < len(chunks):
             chunk = chunks[i]
+            # Nếu có pdf_name, chỉ lấy chunks từ tài liệu đó
+            if pdf_name is not None and i < len(chunk_metadata):
+                chunk_pdf_name = chunk_metadata[i].get("pdf_name", "")
+                if chunk_pdf_name != pdf_name:
+                    continue  # Bỏ qua chunk không thuộc PDF được chỉ định
             tokens = tokenizer.tokenize(chunk)
             if len(tokens) > max_tokens_per_chunk:
                 tokens = tokens[:max_tokens_per_chunk]
@@ -113,9 +129,9 @@ def generate_answer(prompt):
     )
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-def rag_answer(query, top_k=3):
+def rag_answer(query, top_k=3, pdf_name=None):
     ensure_initialized()
-    context_chunks = get_relevant_chunks(query, top_k)
+    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
     return answer.split("<|im_start|>assistant")[-1].strip()
@@ -143,8 +159,8 @@ def generate_answer_stream(prompt):
         yield new_text
 
 
-def rag_answer_stream(query, top_k=3):
-    context_chunks = get_relevant_chunks(query, top_k)
+def rag_answer_stream(query, top_k=3, pdf_name=None):
+    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
     prompt = build_prompt(context_chunks, query)
     return generate_answer_stream(prompt)
 
