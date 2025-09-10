@@ -116,6 +116,66 @@ def remove_repetitive_content(response: str, original_query: str) -> str:
     
     return cleaned_response
 
+def is_context_relevant(query: str, context_chunks: list) -> bool:
+    """
+    Kiểm tra xem context có liên quan đến câu hỏi không.
+    """
+    if not context_chunks:
+        return False
+    
+    # Lấy các từ khóa chính từ câu hỏi
+    query_words = set(re.findall(r'\b\w+\b', query.lower()))
+    
+    # Kiểm tra xem có ít nhất 2 từ khóa xuất hiện trong context không
+    relevant_count = 0
+    for chunk in context_chunks:
+        chunk_words = set(re.findall(r'\b\w+\b', chunk.lower()))
+        common_words = query_words.intersection(chunk_words)
+        if len(common_words) >= 2:  # Ít nhất 2 từ khóa chung
+            relevant_count += 1
+    
+    # Nếu ít nhất 1 chunk có liên quan thì coi là relevant
+    return relevant_count > 0
+
+def is_response_hallucinated(response: str, context_chunks: list) -> bool:
+    """
+    Kiểm tra xem response có vẻ như bịa đặt không.
+    """
+    if not response or len(response.strip()) < 20:
+        return False
+    
+    # Kiểm tra các dấu hiệu bịa đặt
+    hallucination_indicators = [
+        "tôi không có thông tin",
+        "không có thông tin",
+        "không biết",
+        "không rõ",
+        "có thể",
+        "có lẽ",
+        "có khả năng",
+        "theo tôi",
+        "tôi nghĩ",
+        "tôi cho rằng"
+    ]
+    
+    response_lower = response.lower()
+    
+    # Nếu response chứa các từ chỉ sự không chắc chắn
+    if any(indicator in response_lower for indicator in hallucination_indicators):
+        return True
+    
+    # Kiểm tra xem response có chứa thông tin không có trong context không
+    response_words = set(re.findall(r'\b\w+\b', response_lower))
+    context_text = ' '.join(context_chunks).lower()
+    context_words = set(re.findall(r'\b\w+\b', context_text))
+    
+    # Nếu response có quá nhiều từ không xuất hiện trong context
+    unique_words = response_words - context_words
+    if len(unique_words) > len(response_words) * 0.3:  # Hơn 30% từ không có trong context
+        return True
+    
+    return False
+
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name=None):
     query = sanitize_input(query)
     if faiss_index is None or len(chunks) == 0:
@@ -140,16 +200,38 @@ def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name=None)
 
 def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
+    
+    # Kiểm tra nếu không có context hoặc context quá ngắn
+    if not context_chunks or len(context.strip()) < 50:
+        return f"""
+        <|im_start|>system
+        Bạn là một trợ lý AI chuyên về an toàn thông tin. 
+        
+        QUY TẮC NGHIÊM NGẶT:
+        - CHỈ trả lời dựa trên thông tin được cung cấp trong phần "Thông tin tham khảo"
+        - TUYỆT ĐỐI KHÔNG được bịa đặt, suy đoán hoặc tạo ra thông tin không có trong tài liệu
+        - Nếu thông tin tham khảo không đủ hoặc không liên quan, PHẢI trả lời: "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+        - KHÔNG được sử dụng kiến thức bên ngoài hoặc kinh nghiệm cá nhân
+        <|im_end|>
+        <|im_start|>user
+        Thông tin tham khảo: {context}
+
+        Câu hỏi: {question}
+        <|im_end|>
+        <|im_start|>assistant
+        """.strip()
+    
     return f"""
     <|im_start|>system
-    Bạn là một trợ lý AI chuyên về an toàn thông tin. Hãy trả lời câu hỏi dựa trên thông tin được cung cấp. 
+    Bạn là một trợ lý AI chuyên về an toàn thông tin. 
     
-    Quy tắc quan trọng:
-    - Chỉ trả lời dựa trên thông tin có sẵn
+    QUY TẮC NGHIÊM NGẶT:
+    - CHỈ trả lời dựa trên thông tin được cung cấp trong phần "Thông tin tham khảo"
+    - TUYỆT ĐỐI KHÔNG được bịa đặt, suy đoán hoặc tạo ra thông tin không có trong tài liệu
+    - Nếu thông tin tham khảo không đủ hoặc không liên quan, PHẢI trả lời: "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+    - KHÔNG được sử dụng kiến thức bên ngoài hoặc kinh nghiệm cá nhân
     - Trả lời ngắn gọn, súc tích và có cấu trúc rõ ràng
     - KHÔNG lặp lại câu hỏi trong câu trả lời
-    - KHÔNG echo lại prompt hoặc câu hỏi gốc
-    - Nếu không có thông tin, trả lời: "Tôi không có thông tin về câu hỏi này."
     <|im_end|>
     <|im_start|>user
     Thông tin tham khảo:
@@ -178,6 +260,15 @@ def generate_answer(prompt):
 def rag_answer(query, top_k=3, pdf_name=None):
     ensure_initialized()
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    
+    # Kiểm tra nếu không có context hoặc context không liên quan
+    if not context_chunks or len(context_chunks) == 0:
+        return "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+    
+    # Kiểm tra độ liên quan của context với câu hỏi
+    if not is_context_relevant(query, context_chunks):
+        return "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+    
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
     
@@ -194,6 +285,10 @@ def rag_answer(query, top_k=3, pdf_name=None):
     
     # Kiểm tra và loại bỏ nội dung lặp lại
     response = remove_repetitive_content(response, query)
+    
+    # Kiểm tra lại nếu response có vẻ như bịa đặt
+    if is_response_hallucinated(response, context_chunks):
+        return "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
     
     return response
 
@@ -226,6 +321,19 @@ def generate_answer_stream(prompt):
 
 def rag_answer_stream(query, top_k=3, pdf_name=None):
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
+    
+    # Kiểm tra nếu không có context hoặc context không liên quan
+    if not context_chunks or len(context_chunks) == 0:
+        def no_info_generator():
+            yield "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+        return no_info_generator()
+    
+    # Kiểm tra độ liên quan của context với câu hỏi
+    if not is_context_relevant(query, context_chunks):
+        def no_info_generator():
+            yield "Tôi không có thông tin về vấn đề này trong các tài liệu hiện có."
+        return no_info_generator()
+    
     prompt = build_prompt(context_chunks, query)
     return generate_answer_stream(prompt)
 
