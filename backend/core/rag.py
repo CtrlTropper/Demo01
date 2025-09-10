@@ -81,6 +81,41 @@ def sanitize_input(text: str) -> str:
     text = re.sub(r'[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r]', '', text)
     return text.strip()
 
+def remove_repetitive_content(response: str, original_query: str) -> str:
+    """
+    Loại bỏ nội dung lặp lại trong response.
+    """
+    # Tách response thành các câu
+    sentences = response.split('. ')
+    
+    # Loại bỏ các câu trùng lặp
+    unique_sentences = []
+    seen_sentences = set()
+    
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+            
+        # Chuẩn hóa câu để so sánh (loại bỏ dấu câu, chuyển thành chữ thường)
+        normalized = re.sub(r'[^\w\s]', '', sentence.lower())
+        
+        # Bỏ qua câu trùng lặp hoặc câu chỉ chứa câu hỏi gốc
+        if (normalized not in seen_sentences and 
+            len(normalized) > 10 and  # Bỏ qua câu quá ngắn
+            not any(word in normalized for word in ['câu hỏi:', 'hỏi:', '?'])):
+            unique_sentences.append(sentence)
+            seen_sentences.add(normalized)
+    
+    # Ghép lại thành response hoàn chỉnh
+    cleaned_response = '. '.join(unique_sentences)
+    
+    # Đảm bảo response kết thúc bằng dấu chấm
+    if cleaned_response and not cleaned_response.endswith('.'):
+        cleaned_response += '.'
+    
+    return cleaned_response
+
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name=None):
     query = sanitize_input(query)
     if faiss_index is None or len(chunks) == 0:
@@ -107,10 +142,17 @@ def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
     <|im_start|>system
-    Bạn là một trợ lý AI an toàn thông tin. Chỉ trả lời người dùng dựa trên thông tin được cung cấp dưới đây. Nếu không biết, hãy trả lời: "Tôi không có thông tin về câu hỏi này." Không được bịa.
+    Bạn là một trợ lý AI chuyên về an toàn thông tin. Hãy trả lời câu hỏi dựa trên thông tin được cung cấp. 
+    
+    Quy tắc quan trọng:
+    - Chỉ trả lời dựa trên thông tin có sẵn
+    - Trả lời ngắn gọn, súc tích và có cấu trúc rõ ràng
+    - KHÔNG lặp lại câu hỏi trong câu trả lời
+    - KHÔNG echo lại prompt hoặc câu hỏi gốc
+    - Nếu không có thông tin, trả lời: "Tôi không có thông tin về câu hỏi này."
     <|im_end|>
     <|im_start|>user
-    Thông tin:
+    Thông tin tham khảo:
     {context}
 
     Câu hỏi: {question}
@@ -125,7 +167,11 @@ def generate_answer(prompt):
         attention_mask=encoding.attention_mask,
         max_new_tokens=256,
         temperature=0.7,
-        do_sample=True
+        do_sample=True,
+        repetition_penalty=1.2,  # Giảm lặp lại
+        no_repeat_ngram_size=3,  # Tránh lặp lại cụm từ 3 từ
+        early_stopping=True,     # Dừng sớm khi gặp end token
+        pad_token_id=tokenizer.eos_token_id
     )
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
@@ -134,7 +180,22 @@ def rag_answer(query, top_k=3, pdf_name=None):
     context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
     prompt = build_prompt(context_chunks, query)
     answer = generate_answer(prompt)
-    return answer.split("<|im_start|>assistant")[-1].strip()
+    
+    # Xử lý response tốt hơn để tránh lặp lại
+    if "<|im_start|>assistant" in answer:
+        # Lấy phần response sau assistant token
+        response = answer.split("<|im_start|>assistant")[-1].strip()
+    else:
+        # Nếu không có assistant token, lấy phần cuối của response
+        response = answer.strip()
+    
+    # Loại bỏ các token đặc biệt còn sót lại
+    response = response.replace("<|im_end|>", "").replace("<|im_start|>", "").strip()
+    
+    # Kiểm tra và loại bỏ nội dung lặp lại
+    response = remove_repetitive_content(response, query)
+    
+    return response
 
 
 def generate_answer_stream(prompt):
@@ -149,6 +210,10 @@ def generate_answer_stream(prompt):
         max_new_tokens=256,
         temperature=0.7,
         do_sample=True,
+        repetition_penalty=1.2,  # Giảm lặp lại
+        no_repeat_ngram_size=3,  # Tránh lặp lại cụm từ 3 từ
+        early_stopping=True,     # Dừng sớm khi gặp end token
+        pad_token_id=tokenizer.eos_token_id,
         streamer=streamer,
     )
 
