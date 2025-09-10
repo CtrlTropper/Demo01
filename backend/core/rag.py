@@ -165,7 +165,7 @@ def generate_answer(prompt):
     outputs = model.generate(
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.7,
         do_sample=True,
         repetition_penalty=1.2,  # Giảm lặp lại
