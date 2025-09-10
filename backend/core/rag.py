@@ -91,14 +91,24 @@ _RE_MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)|!\[\](?:\([^)]*\))?|!\[\]!")
 _RE_MULTI_PUNCT = re.compile(r"([.,;:!?]){2,}")
 _RE_SPACES = re.compile(r"[ \t]+")
 _RE_EMPTY_BRACKETS = re.compile(r"\[\s*\]")
+_RE_GARBAGE = re.compile(r"[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r\u00C0-\u1EF9]")
+_RE_REPEAT_PATTERNS = re.compile(r"(.{3,}?)\1{2,}")
 
 def sanitize_context_chunk(text: str) -> str:
     if not text:
         return ""
+    # Loại bỏ ký tự lạ, markdown ảnh, meta text
+    text = _RE_GARBAGE.sub("", text)
     text = _RE_MD_IMAGE.sub("", text)
     text = _RE_EMPTY_BRACKETS.sub("", text)
     text = text.replace("\u200b", "")
+    # Loại bỏ meta text phổ biến
+    text = re.sub(r"(?:Câu hỏi|Trả lời|Q:|A:|Truy string|kịch bảnvi):[^\n]*", "", text, flags=re.IGNORECASE)
+    # Thu gọn chuỗi dấu câu lặp
     text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
+    # Loại bỏ chuỗi lặp
+    text = _RE_REPEAT_PATTERNS.sub(r"\1", text)
+    # Thu gọn khoảng trắng
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     text = _RE_SPACES.sub(" ", text)
     return text.strip()
@@ -106,19 +116,46 @@ def sanitize_context_chunk(text: str) -> str:
 def sanitize_model_output(text: str) -> str:
     if not text:
         return ""
-    # Loại markdown ảnh, ký tự rác, meta Q/A
+    # Loại bỏ ký tự lạ và markdown ảnh
+    text = _RE_GARBAGE.sub("", text)
     text = _RE_MD_IMAGE.sub("", text)
-    text = text.replace("Câu hỏi:", "").replace("Trả lời:", "")
-    text = text.replace("Q:", "").replace("A:", "")
-    text = text.replace("Truy string:", "")
     text = _RE_EMPTY_BRACKETS.sub("", text)
     text = text.replace("\u200b", "")
-    # Thu gọn chuỗi dấu câu lặp
+    
+    # Loại bỏ meta text và patterns lặp
+    text = re.sub(r"(?:Câu hỏi|Trả lời|Q:|A:|Truy string|kịch bảnvi):[^\n]*", "", text, flags=re.IGNORECASE)
     text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
+    text = _RE_REPEAT_PATTERNS.sub(r"\1", text)
+    
+    # Loại bỏ dòng chỉ chứa dấu câu
+    lines = text.split('\n')
+    clean_lines = []
+    for line in lines:
+        line = line.strip()
+        if line and not re.match(r'^[.,;:!?\-–—\s]+$', line):
+            clean_lines.append(line)
+    text = '\n'.join(clean_lines)
+    
     # Thu gọn khoảng trắng
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     text = _RE_SPACES.sub(" ", text)
     return text.strip()
+
+def detect_repetition(text: str) -> bool:
+    """Phát hiện nội dung lặp lại quá mức"""
+    if len(text) < 50:
+        return False
+    
+    # Kiểm tra chuỗi lặp
+    if _RE_REPEAT_PATTERNS.search(text):
+        return True
+    
+    # Kiểm tra tỷ lệ ký tự đặc biệt
+    special_chars = len(re.findall(r'[.,;:!?\-–—]', text))
+    if special_chars > len(text) * 0.3:
+        return True
+    
+    return False
 
 
 def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
@@ -166,7 +203,15 @@ def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
 <|im_start|>system
-Bạn là trợ lý AI lĩnh vực an toàn thông tin, trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời đúng một câu: "Tôi không có thông tin về câu hỏi này." Không lặp lại câu hỏi. Không nhắc lại 'Thông tin'. Không thêm các tiền tố như "Câu hỏi:", "Trả lời:", "Q:", "A:". Không chèn markdown ảnh/đường dẫn hay ký tự lạ.
+Bạn là trợ lý AI lĩnh vực an toàn thông tin. Trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. CHỈ dùng thông tin trong phần 'Thông tin'. Nếu không có thông tin liên quan, trả lời: "Tôi không có thông tin về câu hỏi này." 
+
+QUAN TRỌNG: 
+- Không lặp lại câu hỏi
+- Không nhắc lại 'Thông tin' 
+- Không thêm tiền tố "Câu hỏi:", "Trả lời:", "Q:", "A:"
+- Không chèn markdown ảnh, đường dẫn, ký tự lạ
+- Không lặp lại nội dung đã viết
+- Dừng ngay khi trả lời xong
 <|im_end|>
 <|im_start|>user
 Thông tin:
@@ -183,20 +228,35 @@ def generate_answer(prompt):
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
         max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.2,
+        temperature=0.1,
         do_sample=False,
-        repetition_penalty=1.15,
-        no_repeat_ngram_size=4,
+        repetition_penalty=1.2,
+        no_repeat_ngram_size=3,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.eos_token_id,
+        early_stopping=True,
     )
     full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     # Chỉ lấy phần sau thẻ assistant để tránh echo prompt
     if "<|im_start|>assistant" in full_text:
-        return full_text.split("<|im_start|>assistant", 1)[1].strip()
-    # Fallback: cắt bỏ phần prompt đầu vào
-    prompt_len = len(tokenizer.decode(encoding.input_ids[0], skip_special_tokens=True))
-    return full_text[prompt_len:].strip()
+        answer = full_text.split("<|im_start|>assistant", 1)[1].strip()
+    else:
+        # Fallback: cắt bỏ phần prompt đầu vào
+        prompt_len = len(tokenizer.decode(encoding.input_ids[0], skip_special_tokens=True))
+        answer = full_text[prompt_len:].strip()
+    
+    # Kiểm tra và dừng sớm nếu phát hiện lặp
+    if detect_repetition(answer):
+        # Cắt tại vị trí bắt đầu lặp
+        lines = answer.split('\n')
+        clean_lines = []
+        for line in lines:
+            if detect_repetition(line):
+                break
+            clean_lines.append(line)
+        answer = '\n'.join(clean_lines).strip()
+    
+    return answer
 
 def rag_answer(query, top_k=3, pdf_name: str | None = None):
     ensure_initialized()
@@ -220,31 +280,54 @@ def generate_answer_stream(prompt):
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
         max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.2,
+        temperature=0.1,
         do_sample=False,
-        repetition_penalty=1.15,
-        no_repeat_ngram_size=4,
+        repetition_penalty=1.2,
+        no_repeat_ngram_size=3,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.eos_token_id,
+        early_stopping=True,
         streamer=streamer,
     )
 
     thread = Thread(target=model.generate, kwargs=generate_kwargs)
     thread.start()
 
-    # Làm sạch theo kiểu tích lũy để tránh rác theo thời gian thực
+    # Làm sạch theo kiểu tích lũy và phát hiện lặp
     raw_accum = ""
     clean_accum = ""
     started = False
+    repetition_detected = False
+    
     for new_text in streamer:
-        if not new_text:
+        if not new_text or repetition_detected:
             continue
+            
         if not started:
             if new_text.strip().startswith("<|im_start|>assistant"):
                 new_text = new_text.split("<|im_start|>assistant", 1)[1]
             started = True
+            
         raw_accum += new_text
         cleaned = sanitize_model_output(raw_accum)
+        
+        # Kiểm tra lặp và dừng sớm
+        if detect_repetition(cleaned):
+            repetition_detected = True
+            # Cắt tại vị trí bắt đầu lặp
+            lines = cleaned.split('\n')
+            clean_lines = []
+            for line in lines:
+                if detect_repetition(line):
+                    break
+                clean_lines.append(line)
+            cleaned = '\n'.join(clean_lines).strip()
+            if len(cleaned) > len(clean_accum):
+                delta = cleaned[len(clean_accum):]
+                if delta:
+                    yield delta
+            break
+        
         # Chỉ phát phần mới sau khi làm sạch
         if len(cleaned) > len(clean_accum):
             delta = cleaned[len(clean_accum):]
