@@ -11,19 +11,11 @@ from threading import Thread
 
 load_dotenv()
 
-# Paths từ .env (mặc định về thư mục `backend/data`)
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "results")
-
+# Paths từ .env
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/models/multilingual_e5_large")
 LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/vinallama-2.7b-chat")
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", os.path.join(DEFAULT_DATA_DIR, "all_faiss.index"))
-EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", os.path.join(DEFAULT_DATA_DIR, "all_embeddings.pkl"))
-# Đồng bộ với embedding.py: cho phép chỉ định OUTPUT_DIR
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", DEFAULT_DATA_DIR)
-
-# Cấu hình sinh
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
+FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_faiss.index")
+EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/results/all_embeddings.pkl")
 
 # Biến toàn cục để khởi tạo lười
 embedding_model = None
@@ -78,272 +70,55 @@ def sanitize_input(text: str) -> str:
     text = re.sub(r'[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r]', '', text)
     return text.strip()
 
-def _trim_chunk_tokens(chunk: str, max_tokens_per_chunk: int) -> str:
-    tokens = tokenizer.tokenize(chunk)
-    if len(tokens) > max_tokens_per_chunk:
-        tokens = tokens[:max_tokens_per_chunk]
-        return tokenizer.convert_tokens_to_string(tokens)
-    return chunk
-
-
-# --- Làm sạch ngữ cảnh và output ---
-_RE_MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)|!\[\](?:\([^)]*\))?|!\[\]!")
-_RE_MULTI_PUNCT = re.compile(r"([.,;:!?]){2,}")
-_RE_SPACES = re.compile(r"[ \t]+")
-_RE_EMPTY_BRACKETS = re.compile(r"\[\s*\]")
-_RE_GARBAGE = re.compile(r"[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r\u00C0-\u1EF9]")
-_RE_REPEAT_PATTERNS = re.compile(r"(.{3,}?)\1{2,}")
-
-def sanitize_context_chunk(text: str) -> str:
-    if not text:
-        return ""
-    # Loại bỏ ký tự lạ, markdown ảnh, meta text
-    text = _RE_GARBAGE.sub("", text)
-    text = _RE_MD_IMAGE.sub("", text)
-    text = _RE_EMPTY_BRACKETS.sub("", text)
-    text = text.replace("\u200b", "")
-    # Loại bỏ meta text phổ biến
-    text = re.sub(r"(?:Câu hỏi|Trả lời|Q:|A:|Truy string|kịch bảnvi):[^\n]*", "", text, flags=re.IGNORECASE)
-    # Thu gọn chuỗi dấu câu lặp
-    text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
-    # Loại bỏ chuỗi lặp
-    text = _RE_REPEAT_PATTERNS.sub(r"\1", text)
-    # Thu gọn khoảng trắng
-    text = re.sub(r"\n\s*\n+", "\n\n", text)
-    text = _RE_SPACES.sub(" ", text)
-    return text.strip()
-
-def sanitize_model_output(text: str) -> str:
-    if not text:
-        return ""
-    # Loại bỏ ký tự lạ và markdown ảnh
-    text = _RE_GARBAGE.sub("", text)
-    text = _RE_MD_IMAGE.sub("", text)
-    text = _RE_EMPTY_BRACKETS.sub("", text)
-    text = text.replace("\u200b", "")
-    
-    # Loại bỏ meta text và patterns lặp
-    text = re.sub(r"(?:Câu hỏi|Trả lời|Q:|A:|Truy string|kịch bảnvi):[^\n]*", "", text, flags=re.IGNORECASE)
-    text = _RE_MULTI_PUNCT.sub(lambda m: m.group(1), text)
-    text = _RE_REPEAT_PATTERNS.sub(r"\1", text)
-    
-    # Loại bỏ dòng chỉ chứa dấu câu
-    lines = text.split('\n')
-    clean_lines = []
-    for line in lines:
-        line = line.strip()
-        if line and not re.match(r'^[.,;:!?\-–—\s]+$', line):
-            clean_lines.append(line)
-    text = '\n'.join(clean_lines)
-    
-    # Thu gọn khoảng trắng
-    text = re.sub(r"\n\s*\n+", "\n\n", text)
-    text = _RE_SPACES.sub(" ", text)
-    return text.strip()
-
-def detect_repetition(text: str) -> bool:
-    """Phát hiện nội dung lặp lại quá mức"""
-    if len(text) < 50:
-        return False
-    
-    # Kiểm tra chuỗi lặp
-    if _RE_REPEAT_PATTERNS.search(text):
-        return True
-    
-    # Kiểm tra tỷ lệ ký tự đặc biệt
-    special_chars = len(re.findall(r'[.,;:!?\-–—]', text))
-    if special_chars > len(text) * 0.3:
-        return True
-    
-    return False
-
-def is_context_relevant(query: str, context_chunks: list) -> bool:
-    """Kiểm tra độ liên quan của ngữ cảnh với câu hỏi"""
-    if not context_chunks:
-        return False
-    
-    query_lower = query.lower()
-    query_words = set(query_lower.split())
-    
-    # Loại bỏ stop words
-    stop_words = {'là', 'gì', 'của', 'và', 'trong', 'với', 'cho', 'từ', 'đến', 'theo', 'về', 'các', 'một', 'những', 'được', 'có', 'không', 'này', 'đó', 'đây'}
-    query_words = query_words - stop_words
-    
-    if not query_words:
-        return True  # Nếu không có từ khóa quan trọng, chấp nhận
-    
-    # Kiểm tra ít nhất 1 chunk có chứa từ khóa quan trọng
-    for chunk in context_chunks:
-        chunk_lower = chunk.lower()
-        chunk_words = set(chunk_lower.split())
-        
-        # Kiểm tra overlap từ khóa
-        overlap = query_words.intersection(chunk_words)
-        if len(overlap) >= max(1, len(query_words) * 0.3):  # Ít nhất 30% từ khóa
-            return True
-    
-    return False
-
-def is_answer_relevant(query: str, answer: str) -> bool:
-    """Kiểm tra độ liên quan của câu trả lời với câu hỏi"""
-    if not answer or len(answer) < 10:
-        return False
-    
-    # Kiểm tra các từ khóa không liên quan
-    irrelevant_keywords = [
-        'trump', 'ukraine', 'pelican', 'chim bồ nông', 'bay lượn', 
-        'thức ăn', 'g7', 'hội nghị thượng đỉnh', 'tổng thống donald',
-        'sovereignty', 'independence', 'interference'
-    ]
-    
-    answer_lower = answer.lower()
-    for keyword in irrelevant_keywords:
-        if keyword in answer_lower:
-            return False
-    
-    # Kiểm tra độ dài hợp lý (không quá dài)
-    if len(answer) > 1000:
-        return False
-    
-    return True
-
-
-def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512, pdf_name: str | None = None):
+def get_relevant_chunks(query, top_k=3, max_tokens_per_chunk=512):
     query = sanitize_input(query)
-    # Cải thiện cho e5: thêm tiền tố 'query: '
-    query_for_embedding = f"query: {query}" if "e5" in EMBEDDING_MODEL_PATH.lower() else query
-    # Nếu chỉ định tài liệu, ưu tiên dùng index và chunks theo tài liệu đó
-    if pdf_name:
-        doc_dir = os.path.join(OUTPUT_DIR, pdf_name)
-        index_path = os.path.join(doc_dir, f"{pdf_name}_faiss.index")
-        pickle_path = os.path.join(doc_dir, f"{pdf_name}_embeddings.pkl")
-        if os.path.exists(index_path) and os.path.exists(pickle_path):
-            local_index = faiss.read_index(index_path)
-            with open(pickle_path, "rb") as f:
-                local_data = pickle.load(f)
-            local_chunks = local_data.get("chunks", [])
-            if len(local_chunks) == 0:
-                return []
-            query_vector = embedding_model.encode([query_for_embedding])
-            D, I = local_index.search(np.array(query_vector).astype("float32"), top_k)
-            context_chunks = []
-            for i in I[0]:
-                if i < len(local_chunks):
-                    raw_chunk = local_chunks[i]
-                    raw_chunk = sanitize_context_chunk(raw_chunk)
-                    chunk = _trim_chunk_tokens(raw_chunk, max_tokens_per_chunk)
-                    context_chunks.append(chunk.strip())
-            return context_chunks
-
-    # Ngược lại, dùng index toàn cục
     if faiss_index is None or len(chunks) == 0:
         return []
-    query_vector = embedding_model.encode([query_for_embedding])
+    query_vector = embedding_model.encode([query])
     D, I = faiss_index.search(np.array(query_vector).astype("float32"), top_k)
     context_chunks = []
     for i in I[0]:
         if i < len(chunks):
-            raw_chunk = chunks[i]
-            raw_chunk = sanitize_context_chunk(raw_chunk)
-            chunk = _trim_chunk_tokens(raw_chunk, max_tokens_per_chunk)
+            chunk = chunks[i]
+            tokens = tokenizer.tokenize(chunk)
+            if len(tokens) > max_tokens_per_chunk:
+                tokens = tokens[:max_tokens_per_chunk]
+                chunk = tokenizer.convert_tokens_to_string(tokens)
             context_chunks.append(chunk.strip())
     return context_chunks
 
 def build_prompt(context_chunks, question):
     context = "\n---\n".join(context_chunks)
     return f"""
-<|im_start|>system
-Bạn là trợ lý AI lĩnh vực an toàn thông tin. Trả lời NGẮN GỌN, rõ ràng, bằng tiếng Việt. 
+    <|im_start|>system
+    Bạn là một trợ lý AI an toàn thông tin. Chỉ trả lời người dùng dựa trên thông tin được cung cấp dưới đây. Nếu không biết, hãy trả lời: "Tôi không có thông tin về câu hỏi này." Không được bịa.
+    <|im_end|>
+    <|im_start|>user
+    Thông tin:
+    {context}
 
-QUY TẮC NGHIÊM NGẶT:
-- CHỈ dùng thông tin trong phần 'Thông tin' bên dưới
-- KHÔNG được bịa đặt, thêm thông tin không có trong tài liệu
-- Nếu thông tin không liên quan đến câu hỏi, trả lời: "Tôi không có thông tin về câu hỏi này."
-- Không lặp lại câu hỏi
-- Không nhắc lại 'Thông tin' 
-- Không thêm tiền tố "Câu hỏi:", "Trả lời:", "Q:", "A:"
-- Không chèn markdown ảnh, đường dẫn, ký tự lạ
-- Không lặp lại nội dung đã viết
-- Dừng ngay khi trả lời xong
-- KHÔNG được nói về Trump, Ukraine, chim bồ nông, hay bất kỳ chủ đề nào không liên quan
-<|im_end|>
-<|im_start|>user
-Thông tin:
-{context}
-
-Câu hỏi: {question}
-<|im_end|>
-<|im_start|>assistant
-""".strip()
+    Câu hỏi: {question}
+    <|im_end|>
+    <|im_start|>assistant
+    """.strip()
 
 def generate_answer(prompt):
     encoding = tokenizer(prompt, return_tensors="pt").to(model.device)
     outputs = model.generate(
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
-        max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.1,
-        do_sample=False,
-        repetition_penalty=1.2,
-        no_repeat_ngram_size=3,
-        eos_token_id=tokenizer.eos_token_id,
-        pad_token_id=tokenizer.eos_token_id,
-        early_stopping=True,
+        max_new_tokens=256,
+        temperature=0.7,
+        do_sample=True
     )
-    full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    # Chỉ lấy phần sau thẻ assistant để tránh echo prompt
-    if "<|im_start|>assistant" in full_text:
-        answer = full_text.split("<|im_start|>assistant", 1)[1].strip()
-    else:
-        # Fallback: cắt bỏ phần prompt đầu vào
-        prompt_len = len(tokenizer.decode(encoding.input_ids[0], skip_special_tokens=True))
-        answer = full_text[prompt_len:].strip()
-    
-    # Kiểm tra và dừng sớm nếu phát hiện lặp
-    if detect_repetition(answer):
-        # Cắt tại vị trí bắt đầu lặp
-        lines = answer.split('\n')
-        clean_lines = []
-        for line in lines:
-            if detect_repetition(line):
-                break
-            clean_lines.append(line)
-        answer = '\n'.join(clean_lines).strip()
-    
-    return answer
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-def rag_answer(query, top_k=3, pdf_name: str | None = None):
+def rag_answer(query, top_k=3):
     ensure_initialized()
-    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
-    
-    # Debug: In ra thông tin để kiểm tra
-    print(f"DEBUG - Query: {query}")
-    print(f"DEBUG - PDF name: {pdf_name}")
-    print(f"DEBUG - Found {len(context_chunks)} context chunks")
-    for i, chunk in enumerate(context_chunks):
-        print(f"DEBUG - Chunk {i+1}: {chunk[:100]}...")
-    
-    # Nếu không có ngữ cảnh, trả lời chuẩn
-    if not context_chunks:
-        print("DEBUG - No context found, returning default message")
-        return "Tôi không có thông tin về câu hỏi này."
-    
-    # Kiểm tra độ liên quan của ngữ cảnh
-    if not is_context_relevant(query, context_chunks):
-        print("DEBUG - Context not relevant, returning default message")
-        return "Tôi không có thông tin về câu hỏi này."
-    
+    context_chunks = get_relevant_chunks(query, top_k)
     prompt = build_prompt(context_chunks, query)
-    print(f"DEBUG - Prompt length: {len(prompt)}")
     answer = generate_answer(prompt)
-    answer = sanitize_model_output(answer)
-    
-    # Kiểm tra độ liên quan của câu trả lời
-    if not is_answer_relevant(query, answer):
-        print("DEBUG - Answer not relevant, returning default message")
-        return "Tôi không có thông tin về câu hỏi này."
-    
-    return answer.strip()
+    return answer.split("<|im_start|>assistant")[-1].strip()
 
 
 def generate_answer_stream(prompt):
@@ -355,86 +130,22 @@ def generate_answer_stream(prompt):
     generate_kwargs = dict(
         input_ids=encoding.input_ids,
         attention_mask=encoding.attention_mask,
-        max_new_tokens=MAX_NEW_TOKENS,
-        temperature=0.1,
-        do_sample=False,
-        repetition_penalty=1.2,
-        no_repeat_ngram_size=3,
-        eos_token_id=tokenizer.eos_token_id,
-        pad_token_id=tokenizer.eos_token_id,
-        early_stopping=True,
+        max_new_tokens=256,
+        temperature=0.7,
+        do_sample=True,
         streamer=streamer,
     )
 
     thread = Thread(target=model.generate, kwargs=generate_kwargs)
     thread.start()
 
-    # Làm sạch theo kiểu tích lũy và phát hiện lặp
-    raw_accum = ""
-    clean_accum = ""
-    started = False
-    repetition_detected = False
-    
     for new_text in streamer:
-        if not new_text or repetition_detected:
-            continue
-            
-        if not started:
-            if new_text.strip().startswith("<|im_start|>assistant"):
-                new_text = new_text.split("<|im_start|>assistant", 1)[1]
-            started = True
-            
-        raw_accum += new_text
-        cleaned = sanitize_model_output(raw_accum)
-        
-        # Kiểm tra lặp và dừng sớm
-        if detect_repetition(cleaned):
-            repetition_detected = True
-            # Cắt tại vị trí bắt đầu lặp
-            lines = cleaned.split('\n')
-            clean_lines = []
-            for line in lines:
-                if detect_repetition(line):
-                    break
-                clean_lines.append(line)
-            cleaned = '\n'.join(clean_lines).strip()
-            if len(cleaned) > len(clean_accum):
-                delta = cleaned[len(clean_accum):]
-                if delta:
-                    yield delta
-            break
-        
-        # Chỉ phát phần mới sau khi làm sạch
-        if len(cleaned) > len(clean_accum):
-            delta = cleaned[len(clean_accum):]
-            clean_accum = cleaned
-            if delta:
-                yield delta
+        yield new_text
 
 
-def rag_answer_stream(query, top_k=3, pdf_name: str | None = None):
-    context_chunks = get_relevant_chunks(query, top_k, pdf_name=pdf_name)
-    
-    # Debug: In ra thông tin để kiểm tra
-    print(f"DEBUG STREAM - Query: {query}")
-    print(f"DEBUG STREAM - PDF name: {pdf_name}")
-    print(f"DEBUG STREAM - Found {len(context_chunks)} context chunks")
-    
-    if not context_chunks:
-        print("DEBUG STREAM - No context found, returning default message")
-        def _gen():
-            yield "Tôi không có thông tin về câu hỏi này."
-        return _gen()
-    
-    # Kiểm tra độ liên quan của ngữ cảnh
-    if not is_context_relevant(query, context_chunks):
-        print("DEBUG STREAM - Context not relevant, returning default message")
-        def _gen():
-            yield "Tôi không có thông tin về câu hỏi này."
-        return _gen()
-    
+def rag_answer_stream(query, top_k=3):
+    context_chunks = get_relevant_chunks(query, top_k)
     prompt = build_prompt(context_chunks, query)
-    print(f"DEBUG STREAM - Prompt length: {len(prompt)}")
     return generate_answer_stream(prompt)
 
 # Test độc lập (comment nếu tích hợp)
