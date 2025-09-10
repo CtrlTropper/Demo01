@@ -4,6 +4,7 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const timersRef = useRef({}); // key -> interval id
 
   useEffect(() => {
@@ -20,6 +21,11 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) 
       }
     };
     fetchDocs();
+    
+    // Tự động refresh danh sách mỗi 30 giây
+    const interval = setInterval(fetchDocs, 30000);
+    
+    return () => clearInterval(interval);
   }, [refreshKey]);
 
   const buildViewHref = (it) => {
@@ -84,12 +90,71 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) 
     }
   };
 
+  const handleDelete = async (it) => {
+    // Chỉ cho phép xóa file upload từ người dùng
+    if (it.category !== 'Uploads') {
+      alert('Chỉ có thể xóa tài liệu được upload từ người dùng');
+      return;
+    }
+
+    if (!confirm(`Bạn có chắc chắn muốn xóa tài liệu "${it.pdf_name}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(it.pdf_name)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (res.ok) {
+        // Xóa item khỏi danh sách
+        setItems(prev => prev.filter(p => 
+          !(p.pdf_name === it.pdf_name && p.category === it.category)
+        ));
+        alert('Tài liệu đã được xóa thành công');
+      } else {
+        const error = await res.json();
+        alert(`Lỗi khi xóa tài liệu: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Lỗi khi xóa tài liệu');
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/documents/refresh', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setItems(data.items || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-dark-slate rounded-lg shadow-xl w-full max-w-2xl p-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl text-white font-semibold">Quản lý tài liệu</h2>
-          <button className="text-gray-300 hover:text-white" onClick={onClose}>✕</button>
+          <div className="flex items-center gap-2">
+            <button 
+              className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-opacity-80 disabled:opacity-50"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Đang tải...' : 'Làm mới'}
+            </button>
+            <button className="text-gray-300 hover:text-white" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="mb-3 flex items-center gap-2">
           <input
@@ -115,10 +180,17 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {items.filter(it => it.pdf_name.toLowerCase().includes(q.toLowerCase())).map((it, idx) => (
+                {items.filter(it => {
+                  const searchText = q.toLowerCase();
+                  const displayName = (it.display_name || it.pdf_name).toLowerCase();
+                  const pdfName = it.pdf_name.toLowerCase();
+                  return displayName.includes(searchText) || pdfName.includes(searchText);
+                }).map((it, idx) => (
                   <tr key={`${it.pdf_name}-${it.category || 'NA'}-${idx}`}>
                     <td className="px-3 py-3 align-top">
-                      <div className="text-white font-medium truncate" title={it.pdf_name}>{it.pdf_name}</div>
+                      <div className="text-white font-medium truncate" title={it.display_name || it.pdf_name}>
+                        {it.display_name || it.pdf_name}
+                      </div>
                       <div className="text-xs text-gray-400">{it.embedded ? 'Đã nhúng' : 'Chưa nhúng'} · Nguồn: {it.category || 'Initial'}</div>
                     </td>
                     <td className="px-3 py-3">
@@ -162,6 +234,14 @@ const DocumentManagerModal = ({ onClose, onSelect, activeDoc, refreshKey = 0 }) 
                             onClick={() => onSelect(null)}
                           >
                             Bỏ chọn
+                          </button>
+                        )}
+                        {it.category === 'Uploads' && (
+                          <button
+                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-opacity-80"
+                            onClick={() => handleDelete(it)}
+                          >
+                            Xóa
                           </button>
                         )}
                       </div>

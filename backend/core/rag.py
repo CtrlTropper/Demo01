@@ -77,6 +77,36 @@ def ensure_initialized() -> None:
 
     _initialized = True
 
+
+def reload_embeddings() -> None:
+    """
+    Reload embeddings và FAISS index từ file system.
+    Được gọi khi có thay đổi trong tài liệu (thêm/xóa file).
+    """
+    global faiss_index, chunks, chunk_metadata
+    
+    # Load FAISS index và chunks nếu tồn tại
+    if os.path.exists(FAISS_INDEX_PATH) and os.path.exists(EMBEDDINGS_PICKLE_PATH):
+        faiss_index = faiss.read_index(FAISS_INDEX_PATH)
+        with open(EMBEDDINGS_PICKLE_PATH, "rb") as f:
+            data = pickle.load(f)
+        chunks = []
+        chunk_metadata = []
+        for item in data:
+            pdf_name = item.get("pdf_name", "unknown")
+            item_chunks = item.get("chunks", [])
+            chunks.extend(item_chunks)
+            # Lưu metadata cho mỗi chunk
+            for i in range(len(item_chunks)):
+                chunk_metadata.append({
+                    "pdf_name": pdf_name,
+                    "chunk_index": i
+                })
+    else:
+        faiss_index = None
+        chunks = []
+        chunk_metadata = []
+
 def sanitize_input(text: str) -> str:
     text = re.sub(r'[^\w\s.,;:()\[\]?!\"\'\-–—…°%‰≥≤→←≠=+/*<>\n\r]', '', text)
     return text.strip()

@@ -23,6 +23,7 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     pdf_name = Column(String(255), nullable=False, unique=True, index=True)
     path = Column(Text, nullable=False)
+    original_filename = Column(String(255), nullable=True)  # Tên file gốc trước khi chuyển đổi
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (

@@ -12,8 +12,9 @@ from ..core.embeding import (
     save_embeddings,
     OUTPUT_DIR,
     is_embedded_by_pdf_name,
+    normalize_filename,
 )
-from ..core.rag import rag_answer, rag_answer_stream  # Từ core
+from ..core.rag import rag_answer, rag_answer_stream, reload_embeddings  # Từ core
 import uuid
 import os
 from .auth import get_current_user
@@ -52,7 +53,9 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files allowed")
 
-    pdf_name = os.path.splitext(os.path.basename(file.filename))[0]
+    # Chuyển đổi tên file từ tiếng Việt có dấu sang không dấu
+    normalized_filename = normalize_filename(file.filename)
+    pdf_name = os.path.splitext(os.path.basename(normalized_filename))[0]
 
     # Nếu đã tồn tại trong DB thì bỏ qua để tránh embed trùng
     existing = db.query(Document).filter(Document.pdf_name == pdf_name).first()
@@ -63,7 +66,7 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     uploads_dir = os.path.join(backend_dir, "data", "uploads")
     os.makedirs(uploads_dir, exist_ok=True)
-    saved_pdf_path = os.path.join(uploads_dir, f"{pdf_name}.pdf")
+    saved_pdf_path = os.path.join(uploads_dir, normalized_filename)
     with open(saved_pdf_path, "wb") as f:
         f.write(file.file.read())
 
@@ -77,12 +80,15 @@ def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
     embeddings = create_embeddings(chunks_local)
     save_embeddings(chunks_local, embeddings, saved_pdf_path, OUTPUT_DIR)
 
-    # Lưu metadata vào DB
-    doc = Document(pdf_name=pdf_name, path=saved_pdf_path)
+    # Lưu metadata vào DB (lưu cả tên gốc và tên đã chuyển đổi)
+    doc = Document(pdf_name=pdf_name, path=saved_pdf_path, original_filename=file.filename)
     db.add(doc)
     db.commit()
 
-    return {"message": "PDF embedded successfully", "doc_id": doc.id, "pdf_name": pdf_name}
+    # Reload embeddings để cập nhật RAG system
+    reload_embeddings()
+
+    return {"message": "PDF embedded successfully", "doc_id": doc.id, "pdf_name": pdf_name, "original_filename": file.filename}
 
 
 @router.post("/chat/stream")
@@ -131,9 +137,12 @@ def list_documents(db: Session = Depends(get_db)):
     docs = db.query(Document).order_by(Document.created_at.desc()).all()
     results = []
     for d in docs:
+        # Hiển thị tên file gốc nếu có, nếu không thì dùng tên đã chuyển đổi
+        display_name = d.original_filename if d.original_filename else d.pdf_name
         results.append({
             "id": d.id,
-            "pdf_name": d.pdf_name,
+            "pdf_name": d.pdf_name,  # Tên file đã chuyển đổi để xử lý
+            "display_name": display_name,  # Tên file hiển thị cho người dùng
             "path": d.path,
             "embedded": is_embedded_by_pdf_name(d.pdf_name, OUTPUT_DIR),
             "category": "Uploads",
@@ -181,6 +190,22 @@ def list_documents(db: Session = Depends(get_db)):
                     "category": "Uploads",
                 })
     return {"items": results}
+
+
+@router.post("/documents/refresh")
+def refresh_documents(db: Session = Depends(get_db)):
+    """
+    Refresh danh sách tài liệu và reload embeddings.
+    Được gọi khi có thay đổi trong file system.
+    """
+    try:
+        # Reload embeddings để cập nhật RAG system
+        reload_embeddings()
+        
+        # Trả về danh sách tài liệu mới
+        return list_documents(db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh documents: {str(e)}")
 
 
 @router.get("/documents/{pdf_name}")
@@ -280,4 +305,54 @@ def embed_existing_document(pdf_name: str, category: str | None = None):
     chunks_local = split_text_to_chunks_vi_tokenized_with_section(cleaned_text)
     embeddings = create_embeddings(chunks_local)
     save_embeddings(chunks_local, embeddings, pdf_path, OUTPUT_DIR)
+    
+    # Reload embeddings để cập nhật RAG system
+    reload_embeddings()
+    
     return {"message": "Embedded successfully", "pdf_name": pdf_name}
+
+
+@router.delete("/documents/{pdf_name}")
+def delete_document(pdf_name: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """
+    Xóa tài liệu chỉ áp dụng với tài liệu upload từ người dùng.
+    Không cho phép xóa các file trong initial_docs.
+    """
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    uploads_dirs = [
+        os.path.join(OUTPUT_DIR, "uploads"),
+        os.path.join(backend_dir, "data", "uploads"),
+    ]
+    
+    # Chỉ tìm trong thư mục uploads
+    pdf_path = None
+    for up_dir in uploads_dirs:
+        f_up = os.path.join(up_dir, f"{pdf_name}.pdf")
+        if os.path.exists(f_up):
+            pdf_path = f_up
+            break
+    
+    if pdf_path is None:
+        raise HTTPException(status_code=404, detail="Document not found in uploads")
+    
+    try:
+        # Xóa file PDF
+        os.remove(pdf_path)
+        
+        # Xóa embeddings và FAISS index nếu có
+        from ..core.embeding import remove_embeddings_by_pdf_name
+        remove_embeddings_by_pdf_name(pdf_name, OUTPUT_DIR)
+        
+        # Xóa record trong database nếu có
+        doc = db.query(Document).filter(Document.pdf_name == pdf_name).first()
+        if doc:
+            db.delete(doc)
+            db.commit()
+        
+        # Reload embeddings để cập nhật RAG system
+        reload_embeddings()
+        
+        return {"message": f"Document {pdf_name} deleted successfully"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
