@@ -2,7 +2,7 @@ fastapi==0.104.1
 uvicorn==0.24.0
 sqlalchemy==2.0.23
 pydantic==2.5.2
-transformers==4.55.0
+transformers==4.44.2
 sentence-transformers==3.0.1
 faiss-cpu==1.7.4  # Hoặc faiss-gpu nếu dùng GPU
 pymupdf==1.23.7

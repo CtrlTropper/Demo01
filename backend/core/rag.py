@@ -13,7 +13,7 @@ load_dotenv()
 
 # Paths từ .env
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "D:/Vian/Step2_Embeding_and_VectorDB/models/multilingual_e5_large")
-LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/gpt-oss-20b")
+LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "D:/Vian/Step3_RAG_and_LLM/models/vinallama-2.7b-chat")
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "D:/Vian/Demo/backend/results/all_faiss.index")
 EMBEDDINGS_PICKLE_PATH = os.getenv("EMBEDDINGS_PICKLE_PATH", "D:/Vian/Demo/backend/results/all_embeddings.pkl")
 
